@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
 import { MonitorTarget } from '@/types/config'
+import { CompactedMonitorStateWrapper, getFromStore, setToStore } from '@/worker/src/store'
 import { getStoredMonitors, setStoredMonitors } from '@/util/runtimeConfig'
 import type { RuntimeEnv } from '@/util/runtimeConfig'
 import { isAdminRequest } from '@/util/auth'
@@ -29,6 +30,23 @@ function slugify(value: string) {
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback
+}
+
+async function purgeMonitorState(env: RuntimeEnv, monitorId: string): Promise<void> {
+  const db = env.UPTIMEFLARE_D1
+  if (!db) return
+
+  const raw = await getFromStore(env, 'state')
+  if (!raw) return
+
+  const compacted = new CompactedMonitorStateWrapper(raw)
+  const hadIncident = Object.prototype.hasOwnProperty.call(compacted.data.incident, monitorId)
+  const hadLatency = Object.prototype.hasOwnProperty.call(compacted.data.latency, monitorId)
+  if (!hadIncident && !hadLatency) return
+
+  delete compacted.data.incident[monitorId]
+  delete compacted.data.latency[monitorId]
+  await setToStore(env, 'state', compacted.getCompactedStateStr())
 }
 
 function parseMonitor(input: unknown): MonitorTarget {
@@ -131,6 +149,7 @@ export default async function handler(req: NextRequest): Promise<Response> {
       }
 
       await setStoredMonitors(env, nextMonitors)
+      await purgeMonitorState(env, id)
       return json({ stored: nextMonitors })
     } catch (error: unknown) {
       return json({ error: getErrorMessage(error, '删除失败') }, 400)

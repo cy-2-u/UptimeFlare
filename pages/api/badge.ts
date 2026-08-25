@@ -14,7 +14,7 @@ type BadgePayload = {
 
 const jsonHeaders = {
   'Content-Type': 'application/json',
-  'Cache-Control': 'no-store, max-age=0, must-revalidate',
+  'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=600',
 }
 
 function errorBadge(label: string, message: string): BadgePayload {
@@ -49,17 +49,20 @@ export default async function handler(req: NextRequest): Promise<Response> {
     const env = process.env as unknown as RuntimeEnv
     const compactedState = new CompactedMonitorStateWrapper(await getFromStore(env, 'state'))
 
-    const lastIncident = compactedState.getIncident(
-      monitorId,
-      compactedState.incidentLen(monitorId) - 1
-    )
-    const isUp = lastIncident?.end !== null
+    let isUp: boolean | null = null
+    if (compactedState.incidentLen(monitorId) > 0) {
+      const lastIncident = compactedState.getIncident(
+        monitorId,
+        compactedState.incidentLen(monitorId) - 1
+      )
+      isUp = lastIncident.end !== null
+    }
 
     const badge: BadgePayload = {
       schemaVersion: 1,
       label,
-      message: isUp ? upMsg : downMsg,
-      color: isUp ? colorUp : colorDown,
+      message: isUp === null ? 'pending' : isUp ? upMsg : downMsg,
+      color: isUp === null ? 'lightgrey' : isUp ? colorUp : colorDown,
     }
 
     return new Response(JSON.stringify(badge), {

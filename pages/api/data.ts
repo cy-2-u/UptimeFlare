@@ -10,6 +10,7 @@ const headers = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
+  'Cache-Control': 'public, s-maxage=540, stale-while-revalidate=540',
 }
 
 export default async function handler(req: NextRequest): Promise<Response> {

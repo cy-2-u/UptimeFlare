@@ -116,8 +116,7 @@ async function checkMonitor(
   return lastResult!
 }
 
-const Worker = {
-  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+async function runChecks(env: Env): Promise<void> {
     const workerConfig = await getEffectiveWorkerConfig(env)
     if (workerConfig.monitors.length === 0) {
       console.log('No monitors configured, skipping scheduled check.')
@@ -335,6 +334,51 @@ const Worker = {
     } else {
       console.log('Skipping state update due to cooldown period.')
     }
+}
+
+function jsonResponse(body: unknown, init?: ResponseInit): Response {
+  const headers = new Headers(init?.headers)
+  headers.set('content-type', 'application/json;charset=UTF-8')
+  return new Response(JSON.stringify(body), { ...init, headers })
+}
+
+const Worker = {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const url = new URL(request.url)
+
+    if (url.pathname === '/trigger' || url.searchParams.get('trigger') === '1') {
+      if (!['GET', 'POST'].includes(request.method)) {
+        return jsonResponse({ error: 'method not allowed' }, { status: 405 })
+      }
+      ctx.waitUntil(runChecks(env))
+      return jsonResponse({ triggered: true, startedAt: Math.round(Date.now() / 1000) })
+    }
+
+    if (request.method !== 'GET' || (url.pathname !== '/' && url.pathname !== '/health')) {
+      return jsonResponse({ healthy: false, error: 'not found' }, { status: 404 })
+    }
+
+    const state = new CompactedMonitorStateWrapper(await getFromStore(env, 'state'))
+    const workerConfig = await getEffectiveWorkerConfig(env)
+    const lastUpdate = state.data.lastUpdate
+    const nowSec = Math.round(Date.now() / 1000)
+
+    return jsonResponse(
+      {
+        healthy: true,
+        workerLocation: (await getWorkerLocation()) || null,
+        lastUpdate,
+        lastRunAgoSec: lastUpdate ? nowSec - lastUpdate : null,
+        monitorCount: workerConfig.monitors.length,
+        stateBytes: new TextEncoder().encode(state.getCompactedStateStr()).byteLength,
+        serverTime: nowSec,
+      },
+      { headers: { 'cache-control': 'public, s-maxage=15' } }
+    )
+  },
+
+  async scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext): Promise<void> {
+    await runChecks(env)
   },
 }
 
