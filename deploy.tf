@@ -57,6 +57,7 @@ resource "cloudflare_workers_script" "uptimeflare_worker" {
   }
 
   migrations = var.enable_do_migration ? {
+    old_tag            = null
     new_tag            = "v1"
     new_sqlite_classes = ["RemoteChecker"]
   } : var.enable_scheduler_migration ? {
