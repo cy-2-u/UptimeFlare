@@ -57,7 +57,11 @@ function buildWebhookBody(message: string) {
 
 ## Worker 状态检查与手动触发
 
-Worker 除了定时每 10 分钟检查各站点，还提供两个接口方便排查问题。
+监测主调度改成 Durable Object Alarm，每 10 分钟自己续期。Cloudflare Cron 只负责把闹钟重新上弦；Cron 静默停发时，Alarm 仍会继续跑。
+
+首次部署后访问一次 `/health` 或 `/trigger`，闹钟就会开始自己续期。
+
+Worker 还提供两个接口方便排查问题。
 
 ### 健康检查
 
@@ -70,12 +74,12 @@ https://uptimeflare_worker.<你的子域>.workers.dev/health
 返回内容：
 
 ```json
-{"healthy":true,"workerLocation":"HKG","lastUpdate":1787677858,"lastRunAgoSec":78,"monitorCount":4,"stateBytes":2812,"serverTime":1787677936}
+{"healthy":true,"workerLocation":"HKG","lastUpdate":1787677858,"lastRunAgoSec":78,"nextAlarm":1787678458000,"nextAlarmInSec":522,"monitorCount":4,"stateBytes":2812,"serverTime":1787677936}
 ```
 
-只需要看 `lastRunAgoSec`：
+只需要看 `lastRunAgoSec` 和 `nextAlarmInSec`：
 
-它小于 600，说明 cron 每 10 分钟在正常执行。它接近或超过 600，说明超过 10 分钟没有写数据，Worker 可能停了，去 Dashboard 看实时日志。
+`lastRunAgoSec` 小于 600，说明最近 10 分钟写过监测数据。`nextAlarmInSec` 有值，说明 Durable Object 闹钟还在。`lastRunAgoSec` 接近或超过 600，去 Dashboard 看实时日志。
 
 `monitorCount` 是当前监控的站点数量，`stateBytes` 是状态数据的大小，偶尔看一眼确认数据量没有异常增长即可。
 

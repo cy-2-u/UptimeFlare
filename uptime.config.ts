@@ -11,7 +11,6 @@ const pageConfig: PageConfig = {
 }
 
 const workerConfig: WorkerConfig = {
-  kvWriteCooldownMinutes: 10,
   monitors: [],
   notification: {
     timeZone: 'Asia/Shanghai',

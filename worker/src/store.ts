@@ -41,11 +41,13 @@ export async function getFromStore(env: StoreEnv, key: string): Promise<string |
 export async function setToStore(env: StoreEnv, key: string, value: string): Promise<void> {
   const db = env.UPTIMEFLARE_D1
   if (!db) return
-  await ensureStore(env)
-  const stmt = db.prepare(
-    `INSERT INTO ${STORE_TABLE} (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value;`
-  )
-  await stmt.bind(key, value).run()
+  const sql = `INSERT INTO ${STORE_TABLE} (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value;`
+  try {
+    await db.prepare(sql).bind(key, value).run()
+  } catch {
+    await ensureStore(env)
+    await db.prepare(sql).bind(key, value).run()
+  }
 }
 
 export class CompactedMonitorStateWrapper {

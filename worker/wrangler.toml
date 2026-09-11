@@ -6,6 +6,22 @@ compatibility_flags = [ "nodejs_compat" ]
 [triggers]
 crons = [ "*/10 * * * *" ]
 
+[[durable_objects.bindings]]
+name = "REMOTE_CHECKER_DO"
+class_name = "RemoteChecker"
+
+[[durable_objects.bindings]]
+name = "MONITOR_SCHEDULER_DO"
+class_name = "MonitorScheduler"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RemoteChecker"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["MonitorScheduler"]
+
 [[d1_databases]]
 binding = "UPTIMEFLARE_D1"
 database_name = "uptimeflare_d1"

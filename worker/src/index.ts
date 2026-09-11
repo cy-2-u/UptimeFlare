@@ -6,16 +6,22 @@ import { CompactedMonitorStateWrapper, getFromStore, setToStore } from './store'
 import { getEffectiveWorkerConfig } from '../../util/runtimeConfig'
 
 export interface Env {
-  UPTIMEFLARE_STATE: KVNamespace
   UPTIMEFLARE_CONFIG: KVNamespace
   REMOTE_CHECKER_DO: DurableObjectNamespace<RemoteChecker>
+  MONITOR_SCHEDULER_DO: DurableObjectNamespace<MonitorScheduler>
   UPTIMEFLARE_D1: D1Database
+  MONITOR_TRIGGER_SECRET?: string
   [key: string]: any
 }
 
 const MONITOR_CHECK_CONCURRENCY = 4
-const MONITOR_FAILURE_CONFIRMATION_ATTEMPTS = 3
-const MONITOR_FAILURE_RETRY_DELAY_MS = 5000
+const MONITOR_FAILURE_CONFIRMATION_ATTEMPTS = 2
+const MONITOR_FAILURE_RETRY_DELAY_MS = 3000
+const MONITOR_CHECK_INTERVAL_MS = 10 * 60 * 1000
+
+function getScheduler(env: Env) {
+  return env.MONITOR_SCHEDULER_DO.get(env.MONITOR_SCHEDULER_DO.idFromName('default'))
+}
 
 type MonitorCheckResult = {
   monitor: MonitorTarget
@@ -54,10 +60,9 @@ async function checkMonitorOnce(
         })
         resp = await doStub.getLocationAndStatus(monitor)
         try {
-          // Kill the DO instance after use, to avoid extra resource usage
           await doStub.kill()
-        } catch (err) {
-          // An error here is expected, ignore it
+        } catch {
+          // kill() terminates the DO; the thrown error is expected
         }
       } else if (monitor.checkProxy.startsWith('globalping://')) {
         resp = await getStatusWithGlobalPing(monitor)
@@ -321,19 +326,8 @@ async function runChecks(env: Env): Promise<void> {
     console.log(
       `statusChanged: ${statusChanged}, lastUpdate: ${state.data.lastUpdate}, currentTime: ${currentTimeSecond}`
     )
-    // Update state
-    // Allow for a cooldown period before writing to storage
-    if (
-      statusChanged ||
-      currentTimeSecond - state.data.lastUpdate >=
-        (workerConfig.kvWriteCooldownMinutes ?? 3) * 60 - 10 // Allow for 10 seconds of clock drift
-    ) {
-      console.log('Updating state...')
-      state.data.lastUpdate = currentTimeSecond
-      await setToStore(env, 'state', state.getCompactedStateStr())
-    } else {
-      console.log('Skipping state update due to cooldown period.')
-    }
+    state.data.lastUpdate = currentTimeSecond
+    await setToStore(env, 'state', state.getCompactedStateStr())
 }
 
 function jsonResponse(body: unknown, init?: ResponseInit): Response {
@@ -342,47 +336,120 @@ function jsonResponse(body: unknown, init?: ResponseInit): Response {
   return new Response(JSON.stringify(body), { ...init, headers })
 }
 
+function isAuthorizedTrigger(request: Request, env: Env): boolean {
+  const secret = env.MONITOR_TRIGGER_SECRET
+  if (!secret) return false
+  const header = request.headers.get('authorization')
+  if (header === `Bearer ${secret}`) return true
+  const url = new URL(request.url)
+  return url.searchParams.get('secret') === secret
+}
+
 const Worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url)
+    const colo = await getWorkerLocation(request)
 
     if (url.pathname === '/trigger' || url.searchParams.get('trigger') === '1') {
       if (!['GET', 'POST'].includes(request.method)) {
         return jsonResponse({ error: 'method not allowed' }, { status: 405 })
       }
-      ctx.waitUntil(runChecks(env))
-      return jsonResponse({ triggered: true, startedAt: Math.round(Date.now() / 1000) })
+      if (!isAuthorizedTrigger(request, env)) {
+        return jsonResponse({ error: 'unauthorized' }, { status: 401 })
+      }
+      ctx.waitUntil(
+        getScheduler(env)
+          .runNow()
+          .catch((err) => {
+            console.log('Scheduler runNow failed, falling back to direct check:', err)
+            return runChecks(env)
+          })
+      )
+      return jsonResponse(
+        { triggered: true, startedAt: Math.round(Date.now() / 1000) },
+        { headers: { 'cache-control': 'no-store' } }
+      )
     }
 
     if (request.method !== 'GET' || (url.pathname !== '/' && url.pathname !== '/health')) {
       return jsonResponse({ healthy: false, error: 'not found' }, { status: 404 })
     }
 
+    let nextAlarm: number | null = null
+    try {
+      nextAlarm = (await getScheduler(env).ensureAlarm()).nextAlarm
+    } catch (err) {
+      console.log('Failed to arm monitor scheduler:', err)
+    }
+
     const state = new CompactedMonitorStateWrapper(await getFromStore(env, 'state'))
     const workerConfig = await getEffectiveWorkerConfig(env)
     const lastUpdate = state.data.lastUpdate
     const nowSec = Math.round(Date.now() / 1000)
+    const nowMs = Date.now()
 
     return jsonResponse(
       {
         healthy: true,
-        workerLocation: (await getWorkerLocation()) || null,
+        workerLocation: colo || null,
         lastUpdate,
         lastRunAgoSec: lastUpdate ? nowSec - lastUpdate : null,
+        nextAlarm,
+        nextAlarmInSec: nextAlarm ? Math.max(0, Math.round((nextAlarm - nowMs) / 1000)) : null,
         monitorCount: workerConfig.monitors.length,
         stateBytes: new TextEncoder().encode(state.getCompactedStateStr()).byteLength,
         serverTime: nowSec,
       },
-      { headers: { 'cache-control': 'public, s-maxage=15' } }
+      { headers: { 'cache-control': 'no-store' } }
     )
   },
 
   async scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext): Promise<void> {
-    await runChecks(env)
+    try {
+      await getScheduler(env).ensureAlarm()
+    } catch (err) {
+      console.log('Failed to arm monitor scheduler from cron, running checks directly:', err)
+      await runChecks(env)
+    }
   },
 }
 
 export default Worker
+
+export class MonitorScheduler extends DurableObject {
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env)
+  }
+
+  async ensureAlarm(): Promise<{ nextAlarm: number }> {
+    const existing = await this.ctx.storage.getAlarm()
+    const now = Date.now()
+    if (existing == null || existing < now) {
+      const next = now + 1000
+      await this.ctx.storage.setAlarm(next)
+      return { nextAlarm: next }
+    }
+    return { nextAlarm: existing }
+  }
+
+  async runNow(): Promise<void> {
+    const existing = await this.ctx.storage.getAlarm()
+    if (existing == null) {
+      await this.ctx.storage.setAlarm(Date.now() + MONITOR_CHECK_INTERVAL_MS)
+    }
+    await runChecks(this.env as Env)
+  }
+
+  async alarm(): Promise<void> {
+    try {
+      await runChecks(this.env as Env)
+    } catch (err) {
+      console.log('MonitorScheduler alarm check failed:', err)
+    } finally {
+      await this.ctx.storage.setAlarm(Date.now() + MONITOR_CHECK_INTERVAL_MS)
+    }
+  }
+}
 
 export class RemoteChecker extends DurableObject {
   constructor(ctx: DurableObjectState, env: Env) {
@@ -392,7 +459,7 @@ export class RemoteChecker extends DurableObject {
   async getLocationAndStatus(
     monitor: MonitorTarget
   ): Promise<{ location: string; status: { ping: number; up: boolean; err: string } }> {
-    const colo = (await getWorkerLocation()) as string
+    const colo = (await getWorkerLocation()) || 'ERROR'
     console.log(`Running remote checker (DurableObject) at ${colo}...`)
     const status = await getStatus(monitor)
     return {

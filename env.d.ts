@@ -1,7 +1,8 @@
 declare global {
   namespace NodeJS {
     interface ProcessEnv {
-      UPTIMEFLARE_STATE: KVNamespace
+      UPTIMEFLARE_CONFIG: KVNamespace
+      UPTIMEFLARE_D1: D1Database
     }
   }
 }

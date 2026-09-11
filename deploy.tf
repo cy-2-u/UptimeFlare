@@ -21,6 +21,11 @@ variable "enable_do_migration" {
   default = false
 }
 
+variable "enable_scheduler_migration" {
+  type    = bool
+  default = false
+}
+
 resource "cloudflare_d1_database" "uptimeflare_d1" {
   account_id            = var.CLOUDFLARE_ACCOUNT_ID
   name                  = "uptimeflare_d1"
@@ -54,11 +59,19 @@ resource "cloudflare_workers_script" "uptimeflare_worker" {
   migrations = var.enable_do_migration ? {
     new_tag            = "v1"
     new_sqlite_classes = ["RemoteChecker"]
+  } : var.enable_scheduler_migration ? {
+    old_tag            = "v1"
+    new_tag            = "v2"
+    new_sqlite_classes = ["MonitorScheduler"]
   } : null
 
   bindings = [{
     name       = "REMOTE_CHECKER_DO"
     class_name = "RemoteChecker"
+    type       = "durable_object_namespace"
+    }, {
+    name       = "MONITOR_SCHEDULER_DO"
+    class_name = "MonitorScheduler"
     type       = "durable_object_namespace"
     }, {
     name = "UPTIMEFLARE_D1"

@@ -10,16 +10,26 @@ const headers = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
-  'Cache-Control': 'public, s-maxage=540, stale-while-revalidate=540',
+  'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=300',
 }
 
 export default async function handler(req: NextRequest): Promise<Response> {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers })
+  }
+  if (req.method !== 'GET') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+      status: 405,
+      headers,
+    })
+  }
+
   const env = process.env as unknown as RuntimeEnv
   const compactedState = new CompactedMonitorStateWrapper(await getFromStore(env, 'state'))
 
   if (compactedState.data.lastUpdate === 0) {
     return new Response(JSON.stringify({ error: 'No data available' }), {
-      status: 500,
+      status: 503,
       headers,
     })
   }

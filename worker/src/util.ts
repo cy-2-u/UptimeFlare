@@ -2,11 +2,25 @@ import { MonitorTarget } from '../../types/config'
 import { maintenances, workerConfig } from '../../uptime.config'
 import { sendNotification } from './notification'
 
-async function getWorkerLocation() {
+let cachedColo: string | undefined
+
+function coloFromRequest(request?: Request): string | undefined {
+  const colo = request?.cf?.colo
+  return typeof colo === 'string' && colo ? colo : undefined
+}
+
+async function getWorkerLocation(request?: Request) {
+  const fromRequest = coloFromRequest(request)
+  if (fromRequest) {
+    cachedColo = fromRequest
+    return fromRequest
+  }
+  if (cachedColo) return cachedColo
+
   const res = await fetch('https://cloudflare.com/cdn-cgi/trace')
   const text = await res.text()
-
   const colo = /^colo=(.*)$/m.exec(text)?.[1]
+  if (colo) cachedColo = colo
   return colo
 }
 

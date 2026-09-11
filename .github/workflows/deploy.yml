@@ -89,9 +89,15 @@ jobs:
             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")
 
           if echo "$DO_RESP" | jq -e '.result[] | select(.script == "uptimeflare_worker" and .class == "RemoteChecker")' > /dev/null; then
-            echo "Existing Durable Object namespace found for uptimeflare_worker RemoteChecker. No migration needed."
+            echo "Existing Durable Object namespace found for uptimeflare_worker RemoteChecker."
+            if echo "$DO_RESP" | jq -e '.result[] | select(.script == "uptimeflare_worker" and .class == "MonitorScheduler")' > /dev/null; then
+              echo "Existing Durable Object namespace found for uptimeflare_worker MonitorScheduler. No migration needed."
+            else
+              echo "No existing Durable Object namespace found for uptimeflare_worker MonitorScheduler. Need v2 migration."
+              export TF_VAR_enable_scheduler_migration=true
+            fi
           else
-            echo "No existing Durable Object namespace found for uptimeflare_worker RemoteChecker. Need migration."
+            echo "No existing Durable Object namespace found for uptimeflare_worker RemoteChecker. Need v1 migration."
             export TF_VAR_enable_do_migration=true
           fi
 
