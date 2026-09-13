@@ -108,6 +108,7 @@ jobs:
         run: |
           set -euo pipefail
           terraform init
+          terraform validate
 
           echo "Try importing existing resources..."
           terraform import cloudflare_d1_database.uptimeflare_d1 "$TF_VAR_CLOUDFLARE_ACCOUNT_ID/$D1_ID"

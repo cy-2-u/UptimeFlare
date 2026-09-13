@@ -40,6 +40,9 @@ resource "cloudflare_workers_kv_namespace" "uptimeflare_config" {
 resource "cloudflare_workers_script" "uptimeflare_worker" {
   account_id          = var.CLOUDFLARE_ACCOUNT_ID
   script_name         = "uptimeflare_worker"
+  # The provider requires a content source even when updates are ignored.
+  content_file        = "worker/dist/index.js"
+  content_sha256      = filesha256("worker/dist/index.js")
   # Wrangler owns script uploads, bindings and Durable Object migrations.
   # Import is required before apply; Terraform retains the reference for cron.
   lifecycle {
