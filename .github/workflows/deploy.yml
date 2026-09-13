@@ -48,6 +48,9 @@ jobs:
           cd worker
           npm install
 
+      - name: Test worker deployment config
+        run: python3 -B -m unittest discover -s deploy -p 'test_*.py' -v
+
       - name: Build worker
         run: |
           cd worker
@@ -80,45 +83,44 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ steps.fetch_account_id.outputs.account_id }}
           D1_ID: ${{ env.D1_ID }}
 
+      - name: Upload worker and resolve scheduler namespace
+        run: |
+          set -euo pipefail
+          python3 deploy/worker_config.py
+          npx wrangler deploy --config worker/wrangler.deploy.json
+          SCHEDULER_ID=$(curl --fail --silent --show-error --max-time 30 \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/durable_objects/namespaces?per_page=1000" \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            | jq -er 'if .success != true then error("Namespace lookup failed") else
+                [.result[] | select(.script == "uptimeflare_worker" and .class == "MonitorScheduler")]
+                | if length != 1 then error("Expected exactly one MonitorScheduler namespace") else .[0].id end
+                | if type == "string" and test("^[0-9a-fA-F]{32}$") then . else error("Invalid scheduler namespace ID") end
+              end')
+          echo "MONITOR_SCHEDULER_NAMESPACE_ID=$SCHEDULER_ID" >> "$GITHUB_ENV"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ steps.fetch_account_id.outputs.account_id }}
+          D1_ID: ${{ env.D1_ID }}
+          KV_CONFIG_ID: ${{ env.KV_CONFIG_ID }}
+
       - name: Deploy using Terraform
         # As we don't save terraform state somewhere, we need to import the existing resources
         run: |
+          set -euo pipefail
           terraform init
-
-          DO_RESP=$(curl "https://api.cloudflare.com/client/v4/accounts/$TF_VAR_CLOUDFLARE_ACCOUNT_ID/workers/durable_objects/namespaces?per_page=1000" \
-            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")
-
-          if echo "$DO_RESP" | jq -e '.result[] | select(.script == "uptimeflare_worker" and .class == "RemoteChecker")' > /dev/null; then
-            echo "Existing Durable Object namespace found for uptimeflare_worker RemoteChecker."
-            if echo "$DO_RESP" | jq -e '.result[] | select(.script == "uptimeflare_worker" and .class == "MonitorScheduler")' > /dev/null; then
-              echo "Existing Durable Object namespace found for uptimeflare_worker MonitorScheduler. No migration needed."
-            else
-              echo "No existing Durable Object namespace found for uptimeflare_worker MonitorScheduler. Need v2 migration."
-              export TF_VAR_enable_scheduler_migration=true
-            fi
-          else
-            echo "No existing Durable Object namespace found for uptimeflare_worker RemoteChecker. Need v1 migration."
-            export TF_VAR_enable_do_migration=true
-          fi
 
           echo "Try importing existing resources..."
           terraform import cloudflare_d1_database.uptimeflare_d1 "$TF_VAR_CLOUDFLARE_ACCOUNT_ID/$D1_ID"
           terraform import cloudflare_workers_kv_namespace.uptimeflare_config "$TF_VAR_CLOUDFLARE_ACCOUNT_ID/$KV_CONFIG_ID"
-          terraform import cloudflare_workers_script.uptimeflare_worker "$TF_VAR_CLOUDFLARE_ACCOUNT_ID/uptimeflare_worker" || echo "WARNING: Worker script import failed, continuing..."
+          terraform import cloudflare_workers_script.uptimeflare_worker "$TF_VAR_CLOUDFLARE_ACCOUNT_ID/uptimeflare_worker"
           terraform import cloudflare_workers_cron_trigger.uptimeflare_worker_cron "$TF_VAR_CLOUDFLARE_ACCOUNT_ID/uptimeflare_worker" || echo "WARNING: Cron trigger import failed, continuing..."
           terraform import cloudflare_pages_project.uptimeflare "$TF_VAR_CLOUDFLARE_ACCOUNT_ID/uptimeflare" || echo "WARNING: Pages project import failed, continuing..."
 
-          # Deploy the class before resolving its namespace for the Pages binding.
-          terraform apply -auto-approve -input=false -target=cloudflare_workers_script.uptimeflare_worker
-          SCHEDULER_ID=$(curl --fail --silent --show-error --max-time 30 \
-            "https://api.cloudflare.com/client/v4/accounts/$TF_VAR_CLOUDFLARE_ACCOUNT_ID/workers/durable_objects/namespaces?per_page=1000" \
-            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-            | jq -er '.result[] | select(.script == "uptimeflare_worker" and .class == "MonitorScheduler") | .id')
-          export TF_VAR_MONITOR_SCHEDULER_NAMESPACE_ID="$SCHEDULER_ID"
           terraform apply -auto-approve -input=false
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           TF_VAR_CLOUDFLARE_ACCOUNT_ID: ${{ steps.fetch_account_id.outputs.account_id }}
+          TF_VAR_MONITOR_SCHEDULER_NAMESPACE_ID: ${{ env.MONITOR_SCHEDULER_NAMESPACE_ID }}
           D1_ID: ${{ env.D1_ID }}
           KV_CONFIG_ID: ${{ env.KV_CONFIG_ID }}
 

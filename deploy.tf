@@ -16,19 +16,12 @@ variable "CLOUDFLARE_ACCOUNT_ID" {
   type = string
 }
 
-variable "enable_do_migration" {
-  type    = bool
-  default = false
-}
-
-variable "enable_scheduler_migration" {
-  type    = bool
-  default = false
-}
-
 variable "MONITOR_SCHEDULER_NAMESPACE_ID" {
   type = string
-  default = ""
+  validation {
+    condition     = can(regex("^[0-9a-fA-F]{32}$", var.MONITOR_SCHEDULER_NAMESPACE_ID))
+    error_message = "MONITOR_SCHEDULER_NAMESPACE_ID must be the real 32-character hexadecimal Durable Object namespace ID."
+  }
 }
 
 resource "cloudflare_d1_database" "uptimeflare_d1" {
@@ -47,47 +40,11 @@ resource "cloudflare_workers_kv_namespace" "uptimeflare_config" {
 resource "cloudflare_workers_script" "uptimeflare_worker" {
   account_id          = var.CLOUDFLARE_ACCOUNT_ID
   script_name         = "uptimeflare_worker"
-  main_module         = "worker/dist/index.js"
-  content_file        = "worker/dist/index.js"
-  content_sha256      = filesha256("worker/dist/index.js")
-  compatibility_date  = "2025-04-02"
-  compatibility_flags = ["nodejs_compat"]
-
-  observability = {
-    enabled = true
-    logs = {
-      enabled         = true
-      invocation_logs = true
-    }
+  # Wrangler owns script uploads, bindings and Durable Object migrations.
+  # Import is required before apply; Terraform retains the reference for cron.
+  lifecycle {
+    ignore_changes = all
   }
-
-  migrations = var.enable_do_migration ? {
-    old_tag            = null
-    new_tag            = "v1"
-    new_sqlite_classes = ["RemoteChecker", "MonitorScheduler"]
-  } : var.enable_scheduler_migration ? {
-    old_tag            = "v1"
-    new_tag            = "v2"
-    new_sqlite_classes = ["MonitorScheduler"]
-  } : null
-
-  bindings = [{
-    name       = "REMOTE_CHECKER_DO"
-    class_name = "RemoteChecker"
-    type       = "durable_object_namespace"
-    }, {
-    name       = "MONITOR_SCHEDULER_DO"
-    class_name = "MonitorScheduler"
-    type       = "durable_object_namespace"
-    }, {
-    name = "UPTIMEFLARE_D1"
-    type = "d1"
-    id   = cloudflare_d1_database.uptimeflare_d1.id
-    }, {
-    name         = "UPTIMEFLARE_CONFIG"
-    type         = "kv_namespace"
-    namespace_id = cloudflare_workers_kv_namespace.uptimeflare_config.id
-  }]
 }
 
 resource "cloudflare_workers_cron_trigger" "uptimeflare_worker_cron" {
