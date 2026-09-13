@@ -5,9 +5,12 @@
   "scripts": {
     "deploy": "wrangler deploy",
     "dev": "wrangler dev --test-scheduled --persist-to ../.wrangler/state",
-    "start": "wrangler dev"
+    "start": "wrangler dev",
+    "test": "tsx --test src/**/*.test.ts"
   },
   "devDependencies": {
+    "tsx": "^4.21.0",
+    "@types/node": "^20.0.0",
     "@cloudflare/workers-types": "^4.20250410.0",
     "typescript": "^5.0.4",
     "wrangler": "^4.54.0"

@@ -61,13 +61,10 @@ export default function MonitorList({
           <div key={group}>
             <div className="mb-5">
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm">
+                <div className="group-mark flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm">
                   <GroupIcon size={20} />
                 </div>
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
-                    Group
-                  </p>
                   <h2 className="text-2xl font-semibold tracking-[-0.035em] text-slate-950">
                     {group}
                   </h2>

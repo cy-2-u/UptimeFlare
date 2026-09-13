@@ -1,5 +1,6 @@
 import { MonitorTarget, RuntimeBindings, WorkerConfig } from '../types/config'
 import { workerConfig } from '../uptime.config'
+import { schedulerMonitors } from './schedulerClient'
 
 export type RuntimeEnv = RuntimeBindings & Record<string, unknown>
 const STORED_MONITORS_KEY = 'runtime_monitors'
@@ -7,28 +8,16 @@ const STORE_TABLE = 'uptimeflare'
 
 export async function getRuntimeValue(env: RuntimeEnv | undefined, key: string): Promise<string | null> {
   const kv = env?.UPTIMEFLARE_CONFIG
-  if (kv) {
-    try {
-      return await kv.get(key)
-    } catch (error) {
-      console.error(`Failed to read ${key} from KV:`, error)
-      return null
-    }
-  }
+  if (kv) return await kv.get(key)
 
   const db = env?.UPTIMEFLARE_D1 as D1Database | undefined
-  if (!db) return null
+  if (!db) throw new Error('KV or D1 binding is missing')
 
-  try {
-    const result = await db
-      .prepare(`SELECT value FROM ${STORE_TABLE} WHERE key = ?`)
-      .bind(key)
-      .first<{ value: string }>()
-    return result?.value || null
-  } catch (error) {
-    console.error(`Failed to read ${key} from D1:`, error)
-    return null
-  }
+  const result = await db
+    .prepare(`SELECT value FROM ${STORE_TABLE} WHERE key = ?`)
+    .bind(key)
+    .first<{ value: string }>()
+  return result?.value ?? null
 }
 
 export async function setRuntimeValue(env: RuntimeEnv, key: string, value: string): Promise<void> {
@@ -54,24 +43,18 @@ export async function setRuntimeValue(env: RuntimeEnv, key: string, value: strin
 }
 
 export async function getStoredMonitors(env?: RuntimeEnv): Promise<MonitorTarget[]> {
-  const value = await getRuntimeValue(env, STORED_MONITORS_KEY)
-  if (!value) return []
-
-  try {
-    const monitors = JSON.parse(value) as MonitorTarget[]
-    return Array.isArray(monitors) ? monitors : []
-  } catch (error) {
-    console.error('Failed to read stored monitors:', error)
-    return []
+  if (env?.MONITOR_SCHEDULER_DO) {
+    return schedulerMonitors(env)
   }
+  const value = await getRuntimeValue(env, STORED_MONITORS_KEY)
+  if (value === null) return []
+  const monitors = JSON.parse(value) as MonitorTarget[]
+  if (!Array.isArray(monitors)) throw new Error('Invalid stored monitors')
+  return monitors
 }
 
-export async function setStoredMonitors(env: RuntimeEnv, monitors: MonitorTarget[]): Promise<void> {
-  await setRuntimeValue(env, STORED_MONITORS_KEY, JSON.stringify(monitors))
-}
-
-export async function getEffectiveWorkerConfig(env?: RuntimeEnv): Promise<WorkerConfig> {
-  const storedMonitors = await getStoredMonitors(env)
+export async function getEffectiveWorkerConfig(env?: RuntimeEnv, monitors?: MonitorTarget[]): Promise<WorkerConfig> {
+  const storedMonitors = monitors ?? await getStoredMonitors(env)
 
   return {
     ...workerConfig,

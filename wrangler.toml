@@ -13,3 +13,8 @@ database_id = "00000000-0000-0000-0000-000000000000"
 [[kv_namespaces]]
 binding = "UPTIMEFLARE_CONFIG"
 id = "00000000000000000000000000000000"
+
+[[durable_objects.bindings]]
+name = "MONITOR_SCHEDULER_DO"
+class_name = "MonitorScheduler"
+script_name = "uptimeflare_worker"

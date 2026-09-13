@@ -108,6 +108,13 @@ jobs:
           terraform import cloudflare_workers_cron_trigger.uptimeflare_worker_cron "$TF_VAR_CLOUDFLARE_ACCOUNT_ID/uptimeflare_worker" || echo "WARNING: Cron trigger import failed, continuing..."
           terraform import cloudflare_pages_project.uptimeflare "$TF_VAR_CLOUDFLARE_ACCOUNT_ID/uptimeflare" || echo "WARNING: Pages project import failed, continuing..."
 
+          # Deploy the class before resolving its namespace for the Pages binding.
+          terraform apply -auto-approve -input=false -target=cloudflare_workers_script.uptimeflare_worker
+          SCHEDULER_ID=$(curl --fail --silent --show-error --max-time 30 \
+            "https://api.cloudflare.com/client/v4/accounts/$TF_VAR_CLOUDFLARE_ACCOUNT_ID/workers/durable_objects/namespaces?per_page=1000" \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            | jq -er '.result[] | select(.script == "uptimeflare_worker" and .class == "MonitorScheduler") | .id')
+          export TF_VAR_MONITOR_SCHEDULER_NAMESPACE_ID="$SCHEDULER_ID"
           terraform apply -auto-approve -input=false
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

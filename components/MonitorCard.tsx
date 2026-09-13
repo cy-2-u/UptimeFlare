@@ -221,7 +221,7 @@ export default function MonitorCard({
       : status === 'up'
       ? t('Operational')
       : status === 'pending'
-      ? 'Waiting for check'
+       ? '等待检查'
       : t('Down')
 
   return (
@@ -282,16 +282,23 @@ export default function MonitorCard({
           ))}
         </Stack>
       </Drawer>
-      <div className="group relative flex flex-col gap-5 overflow-hidden rounded-[1.75rem] border border-slate-200/80 bg-white/80 p-4 shadow-[0_18px_55px_rgba(15,23,42,0.08)] backdrop-blur transition-all duration-300 hover:-translate-y-0.5 hover:bg-white hover:shadow-[0_24px_70px_rgba(15,23,42,0.12)]">
+      <div className="monitor-card group relative flex flex-col gap-5 overflow-hidden rounded-[1.75rem] border border-slate-200/80 bg-white/80 p-4 shadow-[0_18px_55px_rgba(15,23,42,0.08)] backdrop-blur transition-all duration-300 hover:-translate-y-0.5 hover:bg-white hover:shadow-[0_24px_70px_rgba(15,23,42,0.12)]">
         {/* Preview Image Area */}
-        <div className="aspect-video w-full overflow-hidden rounded-[1.25rem] bg-slate-100">
-          <div className="relative h-full w-full overflow-hidden">
+        <div className="overflow-hidden rounded-[1.15rem] border border-slate-200/65 bg-slate-100">
+          <div className="flex h-8 items-center gap-1.5 border-b border-slate-200/60 bg-white/70 px-3" aria-hidden="true">
+            <span className="h-1.5 w-1.5 rounded-full bg-slate-300" />
+            <span className="h-1.5 w-1.5 rounded-full bg-slate-300" />
+            <span className="h-1.5 w-1.5 rounded-full bg-slate-300" />
+            <span className="ml-2 truncate font-mono text-[9px] tracking-wide text-slate-400">{targetLabel}</span>
+          </div>
+          <div className="relative aspect-video w-full overflow-hidden">
             {previewUrl ? (
               <a href={monitor.statusPageLink} target="_blank" rel="noopener noreferrer" className="block h-full w-full">
                 <Image
                   src={previewUrl}
                   alt={monitor.name}
                   fill
+                  sizes="(min-width: 1280px) 380px, (min-width: 768px) 45vw, 90vw"
                   className="h-full w-full origin-top object-cover object-top transition-transform duration-700 group-hover:scale-105"
                 />
               </a>
@@ -302,11 +309,11 @@ export default function MonitorCard({
             )}
           </div>
 
-          {/* Status Badge - Overlay on Image */}
-          <div className="absolute right-3 top-3">
+          {/* Status Badge */}
+          <div className="absolute right-7 top-16">
             <div
               className={`
-              flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em] shadow-sm
+              flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium shadow-sm backdrop-blur
               ${
                 status === 'maintenance'
                   ? 'border-amber-200 bg-amber-50 text-amber-700'
@@ -325,39 +332,19 @@ export default function MonitorCard({
             </div>
           </div>
 
-          {/* Header Info - Overlay on Image (Top Left) */}
-          <div className="absolute left-3 top-3 max-w-[calc(100%-150px)] overflow-hidden rounded-2xl border border-white/70 bg-white/90 px-3 py-2 shadow-sm backdrop-blur">
-            {monitor.statusPageLink ? (
-              <>
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="w-fit text-sm font-semibold leading-tight text-slate-950">{monitor.name}</h3>
-                  {monitor.group && (
-                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
-                      {monitor.group}
-                    </span>
-                  )}
-                </div>
-                {targetLabel && (
-                  <div className="mt-0.5 text-[10px] font-mono text-slate-500">{targetLabel}</div>
-                )}
-              </>
-            ) : (
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="w-fit text-sm font-semibold leading-tight text-slate-950">{monitor.name}</h3>
-                {monitor.group && (
-                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
-                    {monitor.group}
-                  </span>
-                )}
-              </div>
-            )}
+        </div>
+        <div className="flex min-h-12 items-start justify-between gap-3 px-1">
+          <div className="min-w-0">
+            <h3 className="truncate text-lg font-semibold tracking-[-0.025em] text-slate-800">{monitor.name}</h3>
+            {targetLabel && <div className="mt-1 truncate text-[11px] font-mono text-slate-500">{targetLabel}</div>}
           </div>
+          {monitor.group && <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-500">{monitor.group}</span>}
         </div>
         {/* Uptime Bars */}
         <div className="flex flex-col gap-2">
           <div className="flex justify-between text-xs font-medium text-slate-500">
-            <span>30d check</span>
-            <span>{totalPercent}% uptime</span>
+            <span>近 30 天</span>
+            <span className="font-mono text-slate-700">{totalPercent}<span className="ml-0.5 text-slate-400">%</span></span>
           </div>
           <div className="flex h-6 items-end justify-between gap-[3px]">
             {uptimeBars}
@@ -371,7 +358,7 @@ export default function MonitorCard({
               className={`h-2.5 w-2.5 rounded-full ${statusDotClass}`}
             />
             <span>{statusLabel}</span>
-            {status !== 'pending' && <span className="text-slate-400">{timeInfo} ago</span>}
+            {status !== 'pending' && <span className="text-slate-400">{timeInfo} 前</span>}
           </div>
           <div className="flex items-center gap-1 rounded-xl bg-slate-100 px-2 py-1">
             <span

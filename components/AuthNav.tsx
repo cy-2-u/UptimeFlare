@@ -1,5 +1,7 @@
 import Link from 'next/link'
 import { useRouter } from 'next/router'
+import { IconActivity } from '@tabler/icons-react'
+import { pageConfig } from '@/uptime.config'
 
 export default function AuthNav({ isAdmin }: { isAdmin: boolean }) {
   const router = useRouter()
@@ -14,7 +16,12 @@ export default function AuthNav({ isAdmin }: { isAdmin: boolean }) {
   }
 
   return (
-    <div className="absolute right-4 top-4 z-20 flex items-center gap-2 sm:right-6 lg:right-8">
+    <header className="relative z-20 mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 pt-7 sm:px-6 lg:px-8">
+      <Link href="/" className="flex items-center gap-3 text-sm font-semibold tracking-wide text-slate-700">
+        <span className="brand-mark"><IconActivity size={23} stroke={1.7} /></span>
+        <span>{pageConfig.title || '服务状态'}</span>
+      </Link>
+      <div className="flex items-center gap-2">
       {isAdmin && (
         <Link
           href="/manage"
@@ -39,6 +46,7 @@ export default function AuthNav({ isAdmin }: { isAdmin: boolean }) {
           登录
         </Link>
       )}
-    </div>
+      </div>
+    </header>
   )
 }

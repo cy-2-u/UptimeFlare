@@ -2,8 +2,10 @@ import { DurableObject } from 'cloudflare:workers'
 import { MonitorTarget } from '../../types/config'
 import { getStatus, getStatusWithGlobalPing } from './monitor'
 import { formatAndNotify, getWorkerLocation } from './util'
-import { CompactedMonitorStateWrapper, getFromStore, setToStore } from './store'
+import { CompactedMonitorStateWrapper, getFromStore, compareAndSetStore } from './store'
 import { getEffectiveWorkerConfig } from '../../util/runtimeConfig'
+import { SchedulerState } from './scheduler'
+import { SchedulerError } from '../../util/schedulerClient'
 
 export interface Env {
   UPTIMEFLARE_CONFIG: KVNamespace
@@ -17,7 +19,6 @@ export interface Env {
 const MONITOR_CHECK_CONCURRENCY = 4
 const MONITOR_FAILURE_CONFIRMATION_ATTEMPTS = 2
 const MONITOR_FAILURE_RETRY_DELAY_MS = 3000
-const MONITOR_CHECK_INTERVAL_MS = 10 * 60 * 1000
 
 function getScheduler(env: Env) {
   return env.MONITOR_SCHEDULER_DO.get(env.MONITOR_SCHEDULER_DO.idFromName('default'))
@@ -121,8 +122,8 @@ async function checkMonitor(
   return lastResult!
 }
 
-async function runChecks(env: Env): Promise<void> {
-    const workerConfig = await getEffectiveWorkerConfig(env)
+async function runChecks(env: Env, authoritativeMonitors?: MonitorTarget[]): Promise<void> {
+    const workerConfig = await getEffectiveWorkerConfig(env, authoritativeMonitors)
     if (workerConfig.monitors.length === 0) {
       console.log('No monitors configured, skipping scheduled check.')
       return
@@ -132,7 +133,8 @@ async function runChecks(env: Env): Promise<void> {
     console.log(`Running scheduled event on ${workerLocation}...`)
 
     // Create a wrapped MonitorState from stored compacted state
-    const state = new CompactedMonitorStateWrapper(await getFromStore(env, 'state'))
+    const rawState = await getFromStore(env, 'state')
+    const state = new CompactedMonitorStateWrapper(rawState)
     state.data.overallDown = 0
     state.data.overallUp = 0
 
@@ -327,7 +329,7 @@ async function runChecks(env: Env): Promise<void> {
       `statusChanged: ${statusChanged}, lastUpdate: ${state.data.lastUpdate}, currentTime: ${currentTimeSecond}`
     )
     state.data.lastUpdate = currentTimeSecond
-    await setToStore(env, 'state', state.getCompactedStateStr())
+    await compareAndSetStore(env, 'state', rawState, state.getCompactedStateStr())
 }
 
 function jsonResponse(body: unknown, init?: ResponseInit): Response {
@@ -357,14 +359,7 @@ const Worker = {
       if (!isAuthorizedTrigger(request, env)) {
         return jsonResponse({ error: 'unauthorized' }, { status: 401 })
       }
-      ctx.waitUntil(
-        getScheduler(env)
-          .runNow()
-          .catch((err) => {
-            console.log('Scheduler runNow failed, falling back to direct check:', err)
-            return runChecks(env)
-          })
-      )
+      ctx.waitUntil(getScheduler(env).runNow())
       return jsonResponse(
         { triggered: true, startedAt: Math.round(Date.now() / 1000) },
         { headers: { 'cache-control': 'no-store' } }
@@ -408,8 +403,7 @@ const Worker = {
     try {
       await getScheduler(env).ensureAlarm()
     } catch (err) {
-      console.log('Failed to arm monitor scheduler from cron, running checks directly:', err)
-      await runChecks(env)
+      console.log('Failed to arm monitor scheduler from cron:', err)
     }
   },
 }
@@ -417,37 +411,53 @@ const Worker = {
 export default Worker
 
 export class MonitorScheduler extends DurableObject {
+  private scheduler: SchedulerState
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
+    this.scheduler = new SchedulerState(ctx.storage, env, (monitors) => runChecks(env, monitors))
   }
 
   async ensureAlarm(): Promise<{ nextAlarm: number }> {
-    const existing = await this.ctx.storage.getAlarm()
-    const now = Date.now()
-    if (existing == null || existing < now) {
-      const next = now + 1000
-      await this.ctx.storage.setAlarm(next)
-      return { nextAlarm: next }
+    return this.scheduler.ensureAlarm()
+  }
+
+  async fetch(request: Request): Promise<Response> {
+    if (new URL(request.url).pathname !== '/monitors') {
+      return jsonResponse({ error: 'not found' }, { status: 404 })
     }
-    return { nextAlarm: existing }
+    try {
+      if (request.method === 'GET') return jsonResponse({ monitors: await this.listMonitors() })
+      if (request.method === 'POST') {
+        return jsonResponse({ monitors: await this.addMonitor(await request.json<MonitorTarget>()) })
+      }
+      if (request.method === 'DELETE') {
+        const { id } = await request.json<{ id: string }>()
+        return jsonResponse({ monitors: await this.deleteMonitor(id) })
+      }
+      return jsonResponse({ error: 'method not allowed' }, { status: 405 })
+    } catch (error) {
+      return jsonResponse({ error: error instanceof Error ? error.message : 'Scheduler request failed' }, { status: error instanceof SchedulerError ? error.status : 500 })
+    }
   }
 
   async runNow(): Promise<void> {
-    const existing = await this.ctx.storage.getAlarm()
-    if (existing == null) {
-      await this.ctx.storage.setAlarm(Date.now() + MONITOR_CHECK_INTERVAL_MS)
-    }
-    await runChecks(this.env as Env)
+    return this.scheduler.runNow()
+  }
+
+  async addMonitor(monitor: MonitorTarget): Promise<MonitorTarget[]> {
+    return this.scheduler.addMonitor(monitor)
+  }
+
+  async listMonitors(): Promise<MonitorTarget[]> {
+    return this.scheduler.listMonitors()
+  }
+
+  async deleteMonitor(id: string): Promise<MonitorTarget[]> {
+    return this.scheduler.deleteMonitor(id)
   }
 
   async alarm(): Promise<void> {
-    try {
-      await runChecks(this.env as Env)
-    } catch (err) {
-      console.log('MonitorScheduler alarm check failed:', err)
-    } finally {
-      await this.ctx.storage.setAlarm(Date.now() + MONITOR_CHECK_INTERVAL_MS)
-    }
+    await this.scheduler.runNow()
   }
 }
 

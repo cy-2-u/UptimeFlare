@@ -76,52 +76,53 @@ export default function OverallStatus({
     }))
 
   return (
-    <div className="py-10 sm:py-14">
-      <div className="grid gap-8 lg:grid-cols-[1fr_22rem] lg:items-end">
-        <div className="text-left">
-          <div className="mb-6 inline-flex items-center gap-3 rounded-full border border-slate-200/80 bg-white/80 px-4 py-2 text-sm text-slate-600 shadow-sm backdrop-blur">
+    <div className="py-12 sm:py-16 lg:py-20">
+      <div className="grid items-center gap-9 lg:grid-cols-[1fr_25rem] lg:gap-16">
+        <div className="hero-enter text-left">
+          <div className="mb-7 inline-flex items-center gap-3 rounded-full border border-white bg-white/65 px-4 py-2 text-xs font-medium text-slate-500 shadow-[0_2px_12px_rgba(15,23,42,0.025)] backdrop-blur">
             <span className={`status-pulse h-2.5 w-2.5 rounded-full ${statusTone}`} />
-            <span>10 分钟自动检查</span>
+            <span>每 10 分钟检查</span>
           </div>
-          <h1 className="max-w-3xl text-4xl font-semibold tracking-[-0.055em] text-slate-950 sm:text-6xl">
+          <h1 className="hero-title max-w-3xl text-5xl font-semibold tracking-[-0.055em] sm:text-7xl">
             {pageConfig.title || '服务状态'}
           </h1>
-          <p className="mt-5 max-w-xl text-base leading-7 text-slate-600">
-            看一眼就知道自己的服务是否正常。这里展示可用率、延迟和最近 30 天运行记录。
-          </p>
-          <div className="mt-7 flex flex-wrap gap-3">
+          <div className={`mt-6 flex items-center gap-2.5 text-base font-medium ${statusColor}`}>
+            <StatusIcon size={19} stroke={2} />
+            <span>{statusString}</span>
+          </div>
+          <div className="mt-9 flex flex-wrap gap-3">
             <Button
               variant="default"
               size="sm"
               leftSection={<IconHistory size={15} />}
               onClick={() => setDrawerOpened(true)}
-              styles={{ root: { borderRadius: 999, borderColor: '#d1d5db', color: '#111827' } }}
+              styles={{ root: { borderRadius: 12, borderColor: '#ffffff', color: '#475569', background: 'rgba(255,255,255,.6)', boxShadow: '0 4px 16px rgba(15,23,42,.035)' } }}
             >
               {t('Incidents')}
             </Button>
           </div>
         </div>
 
-        <div className="rounded-[1.75rem] border border-white/70 bg-white/80 p-5 shadow-[0_24px_70px_rgba(15,23,42,0.08)] backdrop-blur-xl">
-          <div className={`flex items-center gap-3 text-lg font-semibold ${statusColor}`}>
-            <StatusIcon stroke={2.5} size={28} />
-            <span>{statusString}</span>
+        <div className="status-summary hero-enter rounded-[2rem] border border-white/90 bg-white/65 p-7 shadow-[0_16px_64px_-20px_rgba(15,75,80,0.18)] backdrop-blur-xl">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium tracking-wide text-slate-500">运行概况</span>
+            <span className={`status-emblem ${statusColor}`} aria-hidden="true"><StatusIcon stroke={1.8} size={22} /></span>
           </div>
-          <div className="mt-6 grid grid-cols-2 gap-5">
+          <div className="relative z-10 mt-4 grid grid-cols-2 divide-x divide-slate-200/60">
             <div>
-              <div className={`text-4xl font-semibold tracking-[-0.05em] ${uptimeTone}`}>
+              <div className={`text-6xl font-light tabular-nums tracking-[-0.06em] ${uptimeTone}`}>
                 {state.overallUp}
               </div>
-              <div className="mt-1 text-sm text-slate-500">在线服务</div>
+              <div className="mt-3 text-xs text-slate-500">在线服务</div>
             </div>
-            <div>
-              <div className="text-4xl font-semibold tracking-[-0.05em] text-slate-950">
+            <div className="pl-7">
+              <div className="text-6xl font-light tabular-nums tracking-[-0.06em] text-slate-700">
                 {totalMonitors}
               </div>
-              <div className="mt-1 text-sm text-slate-500">监测总数</div>
+              <div className="mt-3 text-xs text-slate-500">监测总数</div>
             </div>
           </div>
-          <div className="mt-7 flex items-start gap-2 border-t border-slate-200 pt-4 text-sm text-slate-500">
+          <div className="relative z-10 mt-7 flex items-start gap-2 border-t border-slate-200/60 pt-4 text-[11px] text-slate-400">
             <IconActivity className="mt-0.5 shrink-0" size={15} />
             <span>
               {t('Last updated on', {

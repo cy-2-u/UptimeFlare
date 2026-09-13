@@ -63,16 +63,13 @@ export default function LoginPage() {
             <Link href="/" className="text-sm font-semibold text-slate-500 transition hover:text-slate-950">
               返回状态页
             </Link>
-            <p className="mt-8 text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
-              {isSetup ? 'First Admin' : 'Private Access'}
-            </p>
-            <h1 className="mt-3 text-4xl font-semibold tracking-[-0.055em] text-slate-950">
+            <h1 className="mt-8 text-4xl font-semibold tracking-[-0.055em] text-slate-950">
               {isSetup ? '设置管理员' : '管理员登录'}
             </h1>
             <p className="mt-3 text-sm leading-6 text-slate-600">
               {isSetup
-                ? '首次使用时设置账号和密码，完成后这个账号就是管理员。'
-                : '登录后可以进入站点管理，添加分组、封面图和监测地址。'}
+                ? '创建账号，开始管理站点。'
+                : '登录你的管理账号。'}
             </p>
 
             <form className="mt-7 space-y-4" onSubmit={submit}>

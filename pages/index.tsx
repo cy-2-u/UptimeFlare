@@ -103,7 +103,7 @@ export default function Home({
                   尚未添加监测站点
                 </h1>
                 <p className="mt-6 max-w-xl text-base leading-7 text-slate-600">
-                  管理员登录后可以在站点管理中添加网站，系统会按 10 分钟周期检测，并生成可用率、延迟和故障历史。
+                  登录后添加需要监测的站点。
                 </p>
               </div>
             </div>
@@ -114,7 +114,7 @@ export default function Home({
                   {t('Monitor State not defined')}
                 </Text>
                 <Text mt="sm" size="md" c="dimmed">
-                  监测数据会在 Worker 首次执行后显示，当前默认每 10 分钟自动检查一次。
+                  首次检查完成后显示监测数据。
                 </Text>
               </div>
             </div>
@@ -144,11 +144,11 @@ export async function getServerSideProps({ req }: { req: { headers: { cookie?: s
       name: monitor.name,
       method: monitor.method,
       target: monitor.target,
-      tooltip: monitor.tooltip,
-      statusPageLink: monitor.statusPageLink,
-      hideLatencyChart: monitor.hideLatencyChart,
-      preview: monitor.preview,
-      group: monitor.group,
+      ...(monitor.tooltip ? { tooltip: monitor.tooltip } : {}),
+      ...(monitor.statusPageLink ? { statusPageLink: monitor.statusPageLink } : {}),
+      ...(monitor.hideLatencyChart !== undefined ? { hideLatencyChart: monitor.hideLatencyChart } : {}),
+      ...(monitor.preview ? { preview: monitor.preview } : {}),
+      ...(monitor.group ? { group: monitor.group } : {}),
     }
   })
 

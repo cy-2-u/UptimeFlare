@@ -17,6 +17,79 @@ body {
   border: 1px solid rgba(17, 24, 39, 0.08);
 }
 
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid rgba(255, 255, 255, .9);
+  border-radius: 13px;
+  color: #0f766e;
+  background: linear-gradient(140deg, #fff, #e4f3ef);
+  box-shadow: 0 4px 14px rgba(15, 118, 110, .08), inset 0 -2px 4px rgba(15, 118, 110, .035);
+}
+
+.hero-title {
+  color: #152d37;
+  text-shadow: 0 2px 0 rgba(255, 255, 255, .7);
+}
+
+.hero-enter { animation: gentle-arrival .7s ease-out both; }
+.status-summary.hero-enter { animation-delay: .1s; }
+.status-emblem {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .6);
+  box-shadow: 0 0 0 5px rgba(255, 255, 255, .35), 0 0 0 6px rgba(148, 163, 184, .12);
+}
+
+@keyframes gentle-arrival {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.monitor-card {
+  background: linear-gradient(145deg, rgba(255,255,255,.9), rgba(248,250,252,.68));
+}
+
+.monitor-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(255,255,255,.95), rgba(148,163,184,.18), rgba(255,255,255,.72));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+.status-summary { position: relative; overflow: hidden; }
+.status-summary::after {
+  content: '';
+  pointer-events: none;
+  position: absolute;
+  width: 11rem;
+  height: 11rem;
+  right: -4rem;
+  bottom: -5rem;
+  border: 1px solid rgba(16,185,129,.18);
+  border-radius: 9999px;
+  box-shadow: 0 0 0 1.5rem rgba(16,185,129,.06), 0 0 0 3rem rgba(16,185,129,.035);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-enter, .ambient-orb, .status-pulse::after { animation: none; }
+  .monitor-card, .monitor-card img, .group-mark { transition: none; }
+}
+
+.group-mark { transition: transform .3s ease, color .3s ease; }
+.group-mark:hover { transform: rotate(-5deg) translateY(-2px); color: #0f766e; }
+
 .status-shell {
   position: relative;
   isolation: isolate;

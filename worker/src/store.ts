@@ -11,13 +11,6 @@ type StoreEnv = {
 
 const STORE_TABLE = 'uptimeflare'
 
-async function ensureStore(env: StoreEnv): Promise<void> {
-  if (!env.UPTIMEFLARE_D1) return
-  await env.UPTIMEFLARE_D1.exec(
-    `CREATE TABLE IF NOT EXISTS ${STORE_TABLE} (key VARCHAR(255) PRIMARY KEY, value BLOB NOT NULL);`
-  )
-}
-
 function hexToBytes(hex: string): Uint8Array {
   const bytes = new Uint8Array(hex.length / 2)
   for (let i = 0; i < bytes.length; i++) {
@@ -27,34 +20,27 @@ function hexToBytes(hex: string): Uint8Array {
 }
 
 export async function getFromStore(env: StoreEnv, key: string): Promise<string | null> {
-  if (!env.UPTIMEFLARE_D1) return null
-  try {
-    const stmt = env.UPTIMEFLARE_D1.prepare(`SELECT value FROM ${STORE_TABLE} WHERE key = ?`)
-    const result = await stmt.bind(key).first<{ value: string }>()
-    return result?.value || null
-  } catch (error) {
-    console.error('Failed to read D1 state:', error)
-    return null
-  }
+  if (!env.UPTIMEFLARE_D1) throw new Error('UPTIMEFLARE_D1 binding is missing')
+  const stmt = env.UPTIMEFLARE_D1.withSession('first-primary').prepare(`SELECT value FROM ${STORE_TABLE} WHERE key = ?`)
+  const result = await stmt.bind(key).first<{ value: string }>()
+  return result?.value ?? null
 }
 
-export async function setToStore(env: StoreEnv, key: string, value: string): Promise<void> {
+export async function compareAndSetStore(env: StoreEnv, key: string, expected: string | null, value: string): Promise<void> {
   const db = env.UPTIMEFLARE_D1
-  if (!db) return
-  const sql = `INSERT INTO ${STORE_TABLE} (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value;`
-  try {
-    await db.prepare(sql).bind(key, value).run()
-  } catch {
-    await ensureStore(env)
-    await db.prepare(sql).bind(key, value).run()
-  }
+  if (!db) throw new Error('UPTIMEFLARE_D1 binding is missing')
+  // Compare and write in one SQL statement, including the first-writer race.
+  const result = expected === null
+    ? await db.prepare(`INSERT INTO ${STORE_TABLE} (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING`).bind(key, value).run()
+    : await db.prepare(`UPDATE ${STORE_TABLE} SET value = ? WHERE key = ? AND value = ?`).bind(value, key, expected).run()
+  if (result.meta.changes !== 1) throw new Error(`Concurrent state update for ${key}`)
 }
 
 export class CompactedMonitorStateWrapper {
   data: MonitorStateCompacted
 
   constructor(compactedStateStr: string | null) {
-    if (!compactedStateStr) {
+    if (compactedStateStr === null) {
       // Initialize empty state
       this.data = {
         lastUpdate: 0,

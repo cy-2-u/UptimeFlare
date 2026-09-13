@@ -1,10 +1,10 @@
 import { NextRequest } from 'next/server'
 import { MonitorTarget } from '@/types/config'
-import { CompactedMonitorStateWrapper, getFromStore, setToStore } from '@/worker/src/store'
-import { getStoredMonitors, setStoredMonitors } from '@/util/runtimeConfig'
+import { getStoredMonitors } from '@/util/runtimeConfig'
 import type { RuntimeEnv } from '@/util/runtimeConfig'
 import { isAdminRequest } from '@/util/auth'
 import { workerConfig } from '@/uptime.config'
+import { SchedulerError, schedulerMonitors } from '@/util/schedulerClient'
 
 export const runtime = 'edge'
 
@@ -30,23 +30,6 @@ function slugify(value: string) {
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback
-}
-
-async function purgeMonitorState(env: RuntimeEnv, monitorId: string): Promise<void> {
-  const db = env.UPTIMEFLARE_D1
-  if (!db) return
-
-  const raw = await getFromStore(env, 'state')
-  if (!raw) return
-
-  const compacted = new CompactedMonitorStateWrapper(raw)
-  const hadIncident = Object.prototype.hasOwnProperty.call(compacted.data.incident, monitorId)
-  const hadLatency = Object.prototype.hasOwnProperty.call(compacted.data.latency, monitorId)
-  if (!hadIncident && !hadLatency) return
-
-  delete compacted.data.incident[monitorId]
-  delete compacted.data.latency[monitorId]
-  await setToStore(env, 'state', compacted.getCompactedStateStr())
 }
 
 function parseMonitor(input: unknown): MonitorTarget {
@@ -117,20 +100,11 @@ export default async function handler(req: NextRequest): Promise<Response> {
   if (req.method === 'POST') {
     try {
       const monitor = parseMonitor(await req.json())
-      const configuredIds = new Set(workerConfig.monitors.map((monitor) => monitor.id))
-      const storedMonitors = await getStoredMonitors(env)
-      const existingIds = new Set(storedMonitors.map((monitor) => monitor.id))
+      const authoritative = await schedulerMonitors(env, 'POST', monitor)
 
-      if (configuredIds.has(monitor.id) || existingIds.has(monitor.id)) {
-        return json({ error: '监测 ID 已存在，请换一个名称或 ID' }, 409)
-      }
-
-      const nextMonitors = [...storedMonitors, monitor]
-      await setStoredMonitors(env, nextMonitors)
-
-      return json({ monitor, stored: nextMonitors }, 201)
+      return json({ monitor, stored: authoritative }, 201)
     } catch (error: unknown) {
-      return json({ error: getErrorMessage(error, '添加失败') }, 400)
+      return json({ error: getErrorMessage(error, '添加失败') }, error instanceof SchedulerError ? error.status : 400)
     }
   }
 
@@ -141,18 +115,10 @@ export default async function handler(req: NextRequest): Promise<Response> {
       const id = String(data.id ?? '').trim()
       if (!id) return json({ error: '缺少监测 ID' }, 400)
 
-      const storedMonitors = await getStoredMonitors(env)
-      const nextMonitors = storedMonitors.filter((monitor) => monitor.id !== id)
-
-      if (nextMonitors.length === storedMonitors.length) {
-        return json({ error: '只能删除在页面中添加的监测项' }, 404)
-      }
-
-      await setStoredMonitors(env, nextMonitors)
-      await purgeMonitorState(env, id)
+      const nextMonitors = await schedulerMonitors(env, 'DELETE', { id })
       return json({ stored: nextMonitors })
     } catch (error: unknown) {
-      return json({ error: getErrorMessage(error, '删除失败') }, 400)
+      return json({ error: getErrorMessage(error, '删除失败') }, error instanceof SchedulerError ? error.status : 400)
     }
   }
 

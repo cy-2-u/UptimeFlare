@@ -1,4 +1,4 @@
-import type { Env } from '../worker/src'
+import type { Env, MonitorScheduler } from '../worker/src'
 
 export type PageConfig = {
   title?: string
@@ -60,6 +60,7 @@ export type WorkerConfig<TEnv = Env> = {
 export type RuntimeBindings = {
   UPTIMEFLARE_D1?: D1Database
   UPTIMEFLARE_CONFIG?: KVNamespace
+  MONITOR_SCHEDULER_DO?: DurableObjectNamespace<MonitorScheduler>
 }
 
 export type Notification = {

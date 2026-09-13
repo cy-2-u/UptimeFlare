@@ -112,12 +112,11 @@ export default function MonitorManager() {
     >
       <div className="grid gap-7 lg:grid-cols-[0.95fr_1.05fr]">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.26em] text-slate-500">Manage</p>
-          <h2 className="mt-3 text-2xl font-semibold tracking-[-0.04em] text-slate-950">
+          <h2 className="text-2xl font-semibold tracking-[-0.04em] text-slate-950">
             站点管理
           </h2>
           <p className="mt-3 text-sm leading-6 text-slate-600">
-            添加监测地址、分组和封面图。新站点会在下一次 10 分钟自动检查后生成状态数据。
+            新站点将在下一轮检查后显示状态。
           </p>
 
           <form className="mt-6 space-y-4" onSubmit={submit}>

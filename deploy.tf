@@ -26,6 +26,11 @@ variable "enable_scheduler_migration" {
   default = false
 }
 
+variable "MONITOR_SCHEDULER_NAMESPACE_ID" {
+  type = string
+  default = ""
+}
+
 resource "cloudflare_d1_database" "uptimeflare_d1" {
   account_id            = var.CLOUDFLARE_ACCOUNT_ID
   name                  = "uptimeflare_d1"
@@ -59,7 +64,7 @@ resource "cloudflare_workers_script" "uptimeflare_worker" {
   migrations = var.enable_do_migration ? {
     old_tag            = null
     new_tag            = "v1"
-    new_sqlite_classes = ["RemoteChecker"]
+    new_sqlite_classes = ["RemoteChecker", "MonitorScheduler"]
   } : var.enable_scheduler_migration ? {
     old_tag            = "v1"
     new_tag            = "v2"
@@ -102,6 +107,9 @@ resource "cloudflare_pages_project" "uptimeflare" {
     # SMH Cloudflare provider will throw an error without preview config
     preview = {
       fail_open = false
+      durable_object_namespaces = {
+        MONITOR_SCHEDULER_DO = { namespace_id = var.MONITOR_SCHEDULER_NAMESPACE_ID }
+      }
     }
     production = {
       d1_databases = {
@@ -113,6 +121,9 @@ resource "cloudflare_pages_project" "uptimeflare" {
         UPTIMEFLARE_CONFIG = {
           namespace_id = cloudflare_workers_kv_namespace.uptimeflare_config.id
         }
+      }
+      durable_object_namespaces = {
+        MONITOR_SCHEDULER_DO = { namespace_id = var.MONITOR_SCHEDULER_NAMESPACE_ID }
       }
       compatibility_date  = "2025-04-02"
       compatibility_flags = ["nodejs_compat"]
