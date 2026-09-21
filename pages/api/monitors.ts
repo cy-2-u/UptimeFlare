@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server'
 import { MonitorTarget } from '@/types/config'
 import { getStoredMonitors } from '@/util/runtimeConfig'
 import type { RuntimeEnv } from '@/util/runtimeConfig'
-import { isAdminRequest } from '@/util/auth'
+import { getRequestCookieHeader, isAdminRequest } from '@/util/auth'
 import { workerConfig } from '@/uptime.config'
 import { SchedulerError, schedulerMonitors } from '@/util/schedulerClient'
 
@@ -10,6 +10,7 @@ export const runtime = 'edge'
 
 const headers = {
   'Content-Type': 'application/json',
+  'Cache-Control': 'private, no-store',
   'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
 }
@@ -89,7 +90,7 @@ export default async function handler(req: NextRequest): Promise<Response> {
 
   if (req.method === 'OPTIONS') return new Response(null, { headers })
 
-  const isAdmin = await isAdminRequest(env, req.headers.get('cookie') ?? undefined)
+  const isAdmin = await isAdminRequest(env, getRequestCookieHeader(req))
   if (!isAdmin) return json({ error: '需要管理员登录' }, 401)
 
   if (req.method === 'GET') {

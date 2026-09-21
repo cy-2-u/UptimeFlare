@@ -18,7 +18,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    fetch('/api/admin')
+    fetch('/api/admin', { credentials: 'include', cache: 'no-store' })
       .then(async (res) => (await res.json()) as AdminStatus)
       .then((data) => {
         setStatus(data)
@@ -36,12 +36,14 @@ export default function LoginPage() {
       const action = status?.hasAdmin ? 'login' : 'setup'
       const res = await fetch('/api/admin', {
         method: 'POST',
+        credentials: 'include',
+        cache: 'no-store',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, username, password }),
       })
       const data = (await res.json()) as AdminStatus
       if (!res.ok) throw new Error(data.error || '登录失败')
-      router.replace('/')
+      window.location.assign('/')
     } catch (error: unknown) {
       setMessage(error instanceof Error ? error.message : '登录失败')
     } finally {

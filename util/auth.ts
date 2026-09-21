@@ -136,14 +136,78 @@ export function getCookieValue(cookieHeader: string | undefined, name: string) {
   return cookie ? decodeURIComponent(cookie.slice(prefix.length)) : null
 }
 
+function headerValue(headers: unknown, name: string): string | undefined {
+  if (!headers || typeof headers !== 'object') return undefined
+  const getter = (headers as { get?: (key: string) => string | null }).get
+  if (typeof getter === 'function') {
+    return getter.call(headers, name) ?? undefined
+  }
+
+  const record = headers as Record<string, unknown>
+  const value = record[name] ?? record[name.toLowerCase()]
+  if (typeof value === 'string') return value
+  if (Array.isArray(value) && value.every((item) => typeof item === 'string')) {
+    return name.toLowerCase() === 'cookie' ? value.join('; ') : value.join(', ')
+  }
+  return undefined
+}
+
+function cookieFromStore(cookies: unknown, name: string): string | undefined {
+  if (!cookies || typeof cookies !== 'object') return undefined
+  const getter = (cookies as { get?: (key: string) => unknown }).get
+  if (typeof getter === 'function') {
+    const value = getter.call(cookies, name)
+    if (typeof value === 'string') return value
+    if (value && typeof value === 'object' && 'value' in value) {
+      const inner = (value as { value?: unknown }).value
+      return typeof inner === 'string' ? inner : undefined
+    }
+  }
+
+  const direct = (cookies as Record<string, unknown>)[name]
+  return typeof direct === 'string' ? direct : undefined
+}
+
+export function getRequestCookieHeader(req?: {
+  headers?: unknown
+  cookies?: unknown
+}): string | undefined {
+  const fromHeader = headerValue(req?.headers, 'cookie')
+  if (fromHeader) return fromHeader
+
+  const value = cookieFromStore(req?.cookies, SESSION_COOKIE)
+  return value ? `${SESSION_COOKIE}=${encodeURIComponent(value)}` : undefined
+}
+
+export function isHttpsRequest(req?: { headers?: unknown; url?: string }): boolean {
+  const forwarded = headerValue(req?.headers, 'x-forwarded-proto')
+  if (forwarded) return forwarded.split(',')[0].trim() === 'https'
+  try {
+    if (req?.url) return new URL(req.url).protocol === 'https:'
+  } catch {
+    return false
+  }
+  return false
+}
+
 export async function isAdminRequest(env: RuntimeEnv, cookieHeader?: string) {
   return validateSession(env, getCookieValue(cookieHeader, SESSION_COOKIE))
 }
 
-export function sessionCookie(token: string) {
-  return `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000; Secure`
+export function sessionCookie(token: string, secure = true) {
+  const parts = [
+    `${SESSION_COOKIE}=${encodeURIComponent(token)}`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    'Max-Age=2592000',
+  ]
+  if (secure) parts.push('Secure')
+  return parts.join('; ')
 }
 
-export function expiredSessionCookie() {
-  return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Secure`
+export function expiredSessionCookie(secure = true) {
+  const parts = [`${SESSION_COOKIE}=`, 'Path=/', 'HttpOnly', 'SameSite=Lax', 'Max-Age=0']
+  if (secure) parts.push('Secure')
+  return parts.join('; ')
 }

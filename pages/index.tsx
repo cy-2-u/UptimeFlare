@@ -14,7 +14,7 @@ import { CompactedMonitorStateWrapper, getFromStore } from '@/worker/src/store'
 import { getEffectiveWorkerConfig } from '@/util/runtimeConfig'
 import type { RuntimeEnv } from '@/util/runtimeConfig'
 import AuthNav from '@/components/AuthNav'
-import { isAdminRequest } from '@/util/auth'
+import { getRequestCookieHeader, isAdminRequest } from '@/util/auth'
 
 export const runtime = 'experimental-edge'
 const inter = Inter({ subsets: ['latin'] })
@@ -132,7 +132,14 @@ export default function Home({
   )
 }
 
-export async function getServerSideProps({ req }: { req: { headers: { cookie?: string } } }) {
+export async function getServerSideProps({
+  req,
+  res,
+}: {
+  req: { headers?: unknown; cookies?: Record<string, string> }
+  res?: { setHeader?: (name: string, value: string) => void }
+}) {
+  res?.setHeader?.('Cache-Control', 'private, no-store')
   const env = process.env as unknown as RuntimeEnv
   // Read state as string from storage, to avoid hitting server-side cpu time limit
   const compactedStateStr = await getFromStore(env, 'state')
@@ -156,7 +163,7 @@ export async function getServerSideProps({ req }: { req: { headers: { cookie?: s
     props: {
       compactedStateStr,
       monitors,
-      isAdmin: await isAdminRequest(env, req.headers.cookie),
+      isAdmin: await isAdminRequest(env, getRequestCookieHeader(req)),
     },
   }
 }

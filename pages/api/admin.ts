@@ -4,8 +4,10 @@ import {
   createAdmin,
   createSession,
   expiredSessionCookie,
+  getRequestCookieHeader,
   hasAdmin,
   isAdminRequest,
+  isHttpsRequest,
   sessionCookie,
   verifyAdmin,
 } from '@/util/auth'
@@ -15,6 +17,7 @@ export const runtime = 'edge'
 
 const headers = {
   'Content-Type': 'application/json',
+  'Cache-Control': 'private, no-store',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
 }
@@ -38,7 +41,7 @@ export default async function handler(req: NextRequest): Promise<Response> {
   if (req.method === 'GET') {
     return json({
       hasAdmin: await hasAdmin(env),
-      isAuthenticated: await isAdminRequest(env, req.headers.get('cookie') ?? undefined),
+      isAuthenticated: await isAdminRequest(env, getRequestCookieHeader(req)),
     })
   }
 
@@ -50,22 +53,30 @@ export default async function handler(req: NextRequest): Promise<Response> {
     const username = String(body.username ?? '')
     const password = String(body.password ?? '')
 
+    const secure = isHttpsRequest(req)
+
     if (action === 'setup') {
       const credentials = await createAdmin(env, username, password)
       const token = await createSession(env, credentials)
-      return json({ ok: true }, 201, { 'Set-Cookie': sessionCookie(token) })
+      return json({ ok: true, isAuthenticated: true, hasAdmin: true }, 201, {
+        'Set-Cookie': sessionCookie(token, secure),
+      })
     }
 
     if (action === 'login') {
       const credentials = await verifyAdmin(env, username, password)
       if (!credentials) return json({ error: '账号或密码错误' }, 401)
       const token = await createSession(env, credentials)
-      return json({ ok: true }, 200, { 'Set-Cookie': sessionCookie(token) })
+      return json({ ok: true, isAuthenticated: true, hasAdmin: true }, 200, {
+        'Set-Cookie': sessionCookie(token, secure),
+      })
     }
 
     if (action === 'logout') {
       await clearSession(env)
-      return json({ ok: true }, 200, { 'Set-Cookie': expiredSessionCookie() })
+      return json({ ok: true, isAuthenticated: false }, 200, {
+        'Set-Cookie': expiredSessionCookie(secure),
+      })
     }
 
     return json({ error: '未知操作' }, 400)

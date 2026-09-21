@@ -1,7 +1,7 @@
 import Head from 'next/head'
 import Link from 'next/link'
 import MonitorManager from '@/components/MonitorManager'
-import { isAdminRequest } from '@/util/auth'
+import { getRequestCookieHeader, isAdminRequest } from '@/util/auth'
 import type { RuntimeEnv } from '@/util/runtimeConfig'
 
 export const runtime = 'experimental-edge'
@@ -29,9 +29,16 @@ export default function ManagePage() {
   )
 }
 
-export async function getServerSideProps({ req }: { req: { headers: { cookie?: string } } }) {
+export async function getServerSideProps({
+  req,
+  res,
+}: {
+  req: { headers?: unknown; cookies?: Record<string, string> }
+  res?: { setHeader?: (name: string, value: string) => void }
+}) {
+  res?.setHeader?.('Cache-Control', 'private, no-store')
   const env = process.env as unknown as RuntimeEnv
-  if (await isAdminRequest(env, req.headers.cookie)) return { props: {} }
+  if (await isAdminRequest(env, getRequestCookieHeader(req))) return { props: {} }
 
   return {
     redirect: {
