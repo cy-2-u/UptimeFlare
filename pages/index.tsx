@@ -13,6 +13,10 @@ import { readCompactedStateStr } from '@/util/stateReader'
 import { getEffectiveWorkerConfig } from '@/util/runtimeConfig'
 import type { RuntimeEnv } from '@/util/runtimeConfig'
 
+// Pages Router requires the (experimental) edge runtime for non-static routes;
+// next-on-pages enforces this declaration on every dynamic page.
+export const runtime = 'experimental-edge'
+
 // Poll shortly after the 10-minute check cadence so the page never shows data
 // older than ~12 minutes; the ticker in each card updates the "x 前" labels.
 const STATUS_REFRESH_INTERVAL_MS = 2 * 60 * 1000

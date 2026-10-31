@@ -4,6 +4,8 @@ import MonitorManager from '@/components/MonitorManager'
 import { getRequestCookieHeader, isAdminRequest } from '@/util/auth'
 import type { RuntimeEnv } from '@/util/runtimeConfig'
 
+// Pages Router requires the (experimental) edge runtime for non-static routes;
+// next-on-pages enforces this declaration on every dynamic page.
 export const runtime = 'experimental-edge'
 
 export default function ManagePage() {
