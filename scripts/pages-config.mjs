@@ -58,7 +58,9 @@ if (!scheduler) {
   throw new Error(`MonitorScheduler namespace not found for ${WORKER_NAME}`)
 }
 
-// 3. Configure bindings for production and preview.
+// 3. Configure bindings for production and preview. The legacy KV binding
+// (uptimeflare_config) is explicitly nulled: the namespace gets deleted by
+// the cleanup step and a leftover binding would fail subsequent deploys.
 const compatibility = {
   compatibility_date: '2025-04-02',
   compatibility_flags: ['nodejs_compat'],
@@ -73,10 +75,12 @@ await api(`/accounts/${accountId}/pages/projects/${PROJECT_NAME}`, {
         ...compatibility,
         d1_databases: { UPTIMEFLARE_D1: { id: databaseId } },
         durable_object_namespaces: { MONITOR_SCHEDULER_DO: { namespace_id: scheduler.id } },
+        kv_namespaces: { UPTIMEFLARE_CONFIG: null },
       },
       preview: {
         ...compatibility,
         durable_object_namespaces: { MONITOR_SCHEDULER_DO: { namespace_id: scheduler.id } },
+        kv_namespaces: { UPTIMEFLARE_CONFIG: null },
       },
     },
   }),
