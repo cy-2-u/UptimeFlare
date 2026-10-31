@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { ConfirmButton, Input } from './ui'
+import { ConfirmButton, Dropdown, Input } from './ui'
 
 type ManagedMonitor = {
   id: string
@@ -46,14 +46,31 @@ export default function MonitorManager() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
+  const [groupOpen, setGroupOpen] = useState(false)
   const formRef = useRef<HTMLFormElement>(null)
+  const groupRef = useRef<HTMLDivElement>(null)
 
   const groupOptions = Array.from(
     new Set(['核心服务', ...monitors.map((monitor) => monitor.group || '核心服务')])
   )
+  const groupSuggestions = groupOptions.filter(
+    (group) =>
+      group !== form.group.trim() &&
+      (form.group.trim() === '' ||
+        group.toLowerCase().includes(form.group.trim().toLowerCase()))
+  )
 
   useEffect(() => {
     loadMonitors().catch(() => setMessage('读取监测列表失败'))
+  }, [])
+
+  useEffect(() => {
+    function closeGroupOptions(event: MouseEvent) {
+      if (!groupRef.current?.contains(event.target as Node)) setGroupOpen(false)
+    }
+
+    document.addEventListener('mousedown', closeGroupOptions)
+    return () => document.removeEventListener('mousedown', closeGroupOptions)
   }, [])
 
   async function loadMonitors() {
@@ -192,32 +209,71 @@ export default function MonitorManager() {
 
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="分组">
-                <Input
-                  value={form.group}
-                  onChange={(event) => updateField('group', event.target.value)}
-                  placeholder="核心服务"
-                  list="monitor-group-options"
-                  className="mt-2"
-                />
-                <datalist id="monitor-group-options">
-                  {groupOptions.map((group) => (
-                    <option key={group} value={group} />
-                  ))}
-                </datalist>
+                <div ref={groupRef} className="relative mt-2">
+                  <Input
+                    value={form.group}
+                    onChange={(event) => {
+                      updateField('group', event.target.value)
+                      setGroupOpen(true)
+                    }}
+                    onFocus={() => setGroupOpen(true)}
+                    placeholder="核心服务"
+                    autoComplete="off"
+                  />
+                  <button
+                    type="button"
+                    aria-label="展开分组建议"
+                    aria-expanded={groupOpen}
+                    onClick={() => setGroupOpen((open) => !open)}
+                    className="absolute right-3 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white hover:text-slate-700"
+                  >
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className={`h-3.5 w-3.5 transition-transform duration-200 ${groupOpen ? 'rotate-180' : ''}`}
+                    >
+                      <path d="M3.5 6l4.5 4.5L12.5 6" />
+                    </svg>
+                  </button>
+                  {groupOpen && groupSuggestions.length > 0 && (
+                    <ul className="absolute left-0 right-0 top-full z-30 mt-2 max-h-52 overflow-y-auto rounded-2xl border border-slate-200/80 bg-white/95 p-1.5 shadow-[0_18px_55px_rgba(15,23,42,0.14)] backdrop-blur">
+                      {groupSuggestions.map((group) => (
+                        <li key={group}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              updateField('group', group)
+                              setGroupOpen(false)
+                            }}
+                            className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+                          >
+                            <span>{group}</span>
+                            <span className="text-xs text-slate-400">已有分组</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               </Field>
 
               <Field label="超时时间">
-                <select
-                  value={form.timeout}
-                  onChange={(event) => updateField('timeout', Number(event.target.value))}
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white"
-                >
-                  {timeoutOptions.map((seconds) => (
-                    <option key={seconds} value={seconds}>
-                      {seconds} 秒
-                    </option>
-                  ))}
-                </select>
+                <Dropdown
+                  ariaLabel="超时时间"
+                  value={String(form.timeout)}
+                  onChange={(value) => updateField('timeout', Number(value))}
+                  options={timeoutOptions.map((seconds) => ({
+                    value: String(seconds),
+                    label: `${seconds} 秒`,
+                  }))}
+                  className="mt-2"
+                  triggerClassName="h-12 rounded-2xl border-slate-200 bg-slate-50 focus:border-slate-400 focus:bg-white"
+                />
               </Field>
             </div>
 

@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { MonitorState, MonitorTarget } from '@/types/config'
 import { maintenances } from '@/uptime.config'
 import MaintenanceAlert from './MaintenanceAlert'
-import { Badge, Button, Drawer, Select, formatDuration } from './ui'
+import { Badge, Button, Dropdown, Drawer, formatDuration } from './ui'
 
 type DisplayIncident = {
   monitorId: string
@@ -182,22 +182,20 @@ export default function IncidentsDrawer({
     >
       <div className="space-y-5">
         <div className="rounded-2xl border border-white/70 bg-white/80 p-4 shadow-sm backdrop-blur">
-          <Select
-            aria-label="按站点筛选"
+          <Dropdown
+            ariaLabel="按站点筛选"
             value={selectedMonitor}
-            onChange={(event) => {
-              setSelectedMonitor(event.target.value)
+            onChange={(value) => {
+              setSelectedMonitor(value)
               setPage(1)
             }}
-            className="w-full rounded-full border-transparent bg-slate-100/80"
-          >
-            <option value="">全部站点</option>
-            {monitors.map((monitor) => (
-              <option key={monitor.id} value={monitor.id}>
-                {monitor.name}
-              </option>
-            ))}
-          </Select>
+            options={[
+              { value: '', label: '全部站点' },
+              ...monitors.map((monitor) => ({ value: monitor.id, label: monitor.name })),
+            ]}
+            placeholder="全部站点"
+            triggerClassName="h-11 rounded-full border-transparent bg-slate-100/80 shadow-sm hover:border-slate-200"
+          />
         </div>
 
         <div className="rounded-[1.5rem] border border-slate-200/70 bg-white/85 p-5 backdrop-blur">
