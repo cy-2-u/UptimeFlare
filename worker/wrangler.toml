@@ -4,11 +4,21 @@ compatibility_date = "2025-04-02"
 compatibility_flags = [ "nodejs_compat" ]
 
 [triggers]
-crons = [ "*/10 * * * *" ]
+# Cron is only a supervisor: it re-arms the Durable Object alarm when it went
+# missing and force-re-arms when checks went stale. The 10-minute cadence
+# itself lives in the MonitorScheduler alarm.
+crons = [ "0 * * * *" ]
 
-[[durable_objects.bindings]]
-name = "REMOTE_CHECKER_DO"
-class_name = "RemoteChecker"
+[[d1_databases]]
+binding = "UPTIMEFLARE_D1"
+database_name = "uptimeflare_d1"
+database_id = "00000000-0000-0000-0000-000000000000"
+
+# Optional: only used once by the migrator to copy credentials from KV to D1.
+# The deploy script omits this binding when the namespace does not exist.
+[[kv_namespaces]]
+binding = "UPTIMEFLARE_CONFIG"
+id = "00000000000000000000000000000000"
 
 [[durable_objects.bindings]]
 name = "MONITOR_SCHEDULER_DO"
@@ -22,11 +32,6 @@ new_sqlite_classes = ["RemoteChecker"]
 tag = "v2"
 new_sqlite_classes = ["MonitorScheduler"]
 
-[[d1_databases]]
-binding = "UPTIMEFLARE_D1"
-database_name = "uptimeflare_d1"
-database_id = "00000000-0000-0000-0000-000000000000"
-
-[[kv_namespaces]]
-binding = "UPTIMEFLARE_CONFIG"
-id = "00000000000000000000000000000000"
+[[migrations]]
+tag = "v3"
+deleted_classes = ["RemoteChecker"]

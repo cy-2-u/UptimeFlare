@@ -1,7 +1,8 @@
 import { maintenances } from '@/uptime.config'
-import { NextRequest } from 'next/server'
-import { CompactedMonitorStateWrapper, getFromStore } from '@/worker/src/store'
-import { getEffectiveWorkerConfig, RuntimeEnv } from '@/util/runtimeConfig'
+import type { NextRequest } from 'next/server'
+import type { RuntimeEnv } from '@/util/runtimeConfig'
+import { getEffectiveWorkerConfig } from '@/util/runtimeConfig'
+import { readStateSummary } from '@/util/stateReader'
 
 export const runtime = 'edge'
 
@@ -18,69 +19,40 @@ export default async function handler(req: NextRequest): Promise<Response> {
     return new Response(null, { headers })
   }
   if (req.method !== 'GET') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-      status: 405,
-      headers,
-    })
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers })
   }
 
   const env = process.env as unknown as RuntimeEnv
-  const compactedState = new CompactedMonitorStateWrapper(await getFromStore(env, 'state'))
+  const summary = await readStateSummary(env)
 
-  if (compactedState.data.lastUpdate === 0) {
-    return new Response(JSON.stringify({ error: 'No data available' }), {
-      status: 503,
-      headers,
-    })
+  if (!summary || summary.meta.lastUpdate === 0) {
+    return new Response(JSON.stringify({ error: 'No data available' }), { status: 503, headers })
   }
 
   const monitors: Record<
     string,
-    {
-      up: boolean | null
-      latency: number | null
-      location: string | null
-      message: string
-    }
+    { up: boolean | null; latency: number | null; location: string | null; message: string }
   > = {}
 
   const workerConfig = await getEffectiveWorkerConfig(env)
-
   for (const monitor of workerConfig.monitors) {
-    if (compactedState.incidentLen(monitor.id) === 0 || compactedState.latencyLen(monitor.id) === 0) {
-      monitors[monitor.id] = {
+    monitors[monitor.id] =
+      summary.summaries[monitor.id] ?? {
         up: null,
         latency: null,
         location: null,
         message: 'Pending first check',
       }
-      continue
-    }
-
-    const lastIncident = compactedState.getIncident(
-      monitor.id,
-      compactedState.incidentLen(monitor.id) - 1
-    )
-
-    const isUp = lastIncident?.end !== null
-    const latency = compactedState.getLastLatency(monitor.id)
-    monitors[monitor.id] = {
-      up: isUp,
-      latency: latency.ping,
-      location: latency.loc,
-      message: isUp ? 'OK' : lastIncident?.error[lastIncident.error.length - 1],
-    }
   }
 
-  const ret = {
-    up: compactedState.data.overallUp,
-    down: compactedState.data.overallDown,
-    updatedAt: compactedState.data.lastUpdate,
-    monitors,
-    maintenances,
-  }
-
-  return new Response(JSON.stringify(ret), {
-    headers,
-  })
+  return new Response(
+    JSON.stringify({
+      up: summary.meta.overallUp,
+      down: summary.meta.overallDown,
+      updatedAt: summary.meta.lastUpdate,
+      monitors,
+      maintenances,
+    }),
+    { headers }
+  )
 }

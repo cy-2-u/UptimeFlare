@@ -1,6 +1,6 @@
 function getColor(percent: number | string): string {
   const p = Number(percent)
-  if (Number.isNaN(p)) {
+  if (Number.isNaN(p) || p < 0) {
     return 'bg-gray-200'
   } else if (p >= 99.9) {
     return 'bg-emerald-500'

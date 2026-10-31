@@ -1,248 +1,177 @@
 import {
-  IncidentRecord,
-  LatencyRecord,
-  MonitorState,
-  MonitorStateCompacted,
-} from '../../types/config'
+  META_KEY,
+  incidentKey,
+  latencyKey,
+  type IncidentRow,
+  type LatencyRow,
+} from '../../lib/state-format'
 
 type StoreEnv = {
   UPTIMEFLARE_D1?: D1Database
 }
 
 const STORE_TABLE = 'uptimeflare'
+const BIND_CHUNK = 50
 
-function hexToBytes(hex: string): Uint8Array {
-  const bytes = new Uint8Array(hex.length / 2)
-  for (let i = 0; i < bytes.length; i++) {
-    bytes[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16)
-  }
-  return bytes
+export type RowSnapshot = {
+  key: string
+  value: string | null
 }
 
-export async function getFromStore(env: StoreEnv, key: string): Promise<string | null> {
-  if (!env.UPTIMEFLARE_D1) throw new Error('UPTIMEFLARE_D1 binding is missing')
-  const stmt = env.UPTIMEFLARE_D1.withSession('first-primary').prepare(`SELECT value FROM ${STORE_TABLE} WHERE key = ?`)
-  const result = await stmt.bind(key).first<{ value: string }>()
+export type RowChange = {
+  key: string
+  expected: string | null
+  next: string
+}
+
+export function requireD1(env: StoreEnv): D1Database {
+  const db = env.UPTIMEFLARE_D1
+  if (!db) throw new Error('UPTIMEFLARE_D1 binding is missing')
+  return db
+}
+
+export async function readValue(env: StoreEnv, key: string): Promise<string | null> {
+  const result = await requireD1(env)
+    .prepare(`SELECT value FROM ${STORE_TABLE} WHERE key = ?`)
+    .bind(key)
+    .first<{ value: string }>()
   return result?.value ?? null
 }
 
-export async function compareAndSetStore(env: StoreEnv, key: string, expected: string | null, value: string): Promise<void> {
-  const db = env.UPTIMEFLARE_D1
-  if (!db) throw new Error('UPTIMEFLARE_D1 binding is missing')
-  // Compare and write in one SQL statement, including the first-writer race.
-  const result = expected === null
-    ? await db.prepare(`INSERT INTO ${STORE_TABLE} (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING`).bind(key, value).run()
-    : await db.prepare(`UPDATE ${STORE_TABLE} SET value = ? WHERE key = ? AND value = ?`).bind(value, key, expected).run()
-  if (result.meta.changes !== 1) throw new Error(`Concurrent state update for ${key}`)
+// Load meta plus every per-monitor row in one query. The table only holds
+// this app's rows, so a LIKE scan reads no more than the rows we own.
+export async function readStateSnapshot(
+  env: StoreEnv
+): Promise<{ meta: RowSnapshot; lat: Map<string, RowSnapshot>; inc: Map<string, RowSnapshot> }> {
+  const { results } = await requireD1(env)
+    .prepare(
+      `SELECT key, value FROM ${STORE_TABLE} WHERE key = ? OR key LIKE 'state:lat:%' OR key LIKE 'state:inc:%'`
+    )
+    .bind(META_KEY)
+    .all<{ key: string; value: string }>()
+
+  const meta: RowSnapshot = { key: META_KEY, value: null }
+  const lat = new Map<string, RowSnapshot>()
+  const inc = new Map<string, RowSnapshot>()
+
+  for (const row of results ?? []) {
+    if (row.key === META_KEY) {
+      meta.value = row.value
+    } else if (row.key.startsWith('state:lat:')) {
+      lat.set(row.key.slice('state:lat:'.length), { key: row.key, value: row.value })
+    } else if (row.key.startsWith('state:inc:')) {
+      inc.set(row.key.slice('state:inc:'.length), { key: row.key, value: row.value })
+    }
+  }
+
+  return { meta, lat, inc }
 }
 
-export class CompactedMonitorStateWrapper {
-  data: MonitorStateCompacted
+export async function readLatencySnapshot(
+  env: StoreEnv
+): Promise<{ meta: RowSnapshot; lat: Map<string, RowSnapshot> }> {
+  const { results } = await requireD1(env)
+    .prepare(`SELECT key, value FROM ${STORE_TABLE} WHERE key = ? OR key LIKE 'state:lat:%'`)
+    .bind(META_KEY)
+    .all<{ key: string; value: string }>()
 
-  constructor(compactedStateStr: string | null) {
-    if (compactedStateStr === null) {
-      // Initialize empty state
-      this.data = {
-        lastUpdate: 0,
-        overallUp: 0,
-        overallDown: 0,
-        incident: {},
-        latency: {},
+  const meta: RowSnapshot = { key: META_KEY, value: null }
+  const lat = new Map<string, RowSnapshot>()
+
+  for (const row of results ?? []) {
+    if (row.key === META_KEY) {
+      meta.value = row.value
+    } else if (row.key.startsWith('state:lat:')) {
+      lat.set(row.key.slice('state:lat:'.length), { key: row.key, value: row.value })
+    }
+  }
+
+  return { meta, lat }
+}
+
+// Build a CAS change against a snapshot read earlier in the same run.
+export function changeFrom(snapshot: RowSnapshot, next: string): RowChange {
+  return { key: snapshot.key, expected: snapshot.value, next }
+}
+
+// Commit all changes in one atomic batch. Every write is a compare-and-set
+// against the snapshot, so a concurrent writer makes the whole batch a no-op
+// (INSERT ... DO NOTHING / UPDATE ... WHERE value = ?), which the post-verify
+// turns into a loud error instead of silent data loss. `deleteKeys` removes
+// rows in the same atomic batch (used to drop the legacy state row).
+export async function commitChanges(
+  env: StoreEnv,
+  changes: RowChange[],
+  deleteKeys: string[] = []
+): Promise<void> {
+  if (changes.length === 0 && deleteKeys.length === 0) return
+  const db = requireD1(env)
+
+  const statements = [
+    ...changes.map((change) =>
+      change.expected === null
+        ? db
+            .prepare(
+              `INSERT INTO ${STORE_TABLE} (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING`
+            )
+            .bind(change.key, change.next)
+        : db
+            .prepare(`UPDATE ${STORE_TABLE} SET value = ? WHERE key = ? AND value = ?`)
+            .bind(change.next, change.key, change.expected)
+    ),
+    ...deleteKeys.map((key) =>
+      db.prepare(`DELETE FROM ${STORE_TABLE} WHERE key = ?`).bind(key)
+    ),
+  ]
+
+  await db.batch(statements)
+
+  for (const chunk of chunked(changes, BIND_CHUNK)) {
+    const placeholders = chunk.map(() => '?').join(', ')
+    const { results } = await db
+      .prepare(`SELECT key, value FROM ${STORE_TABLE} WHERE key IN (${placeholders})`)
+      .bind(...chunk.map((change) => change.key))
+      .all<{ key: string; value: string }>()
+
+    const stored = new Map((results ?? []).map((row) => [row.key, row.value]))
+    for (const change of chunk) {
+      if (stored.get(change.key) !== change.next) {
+        throw new Error(`Concurrent state update for ${change.key}`)
       }
-      return
-    }
-    this.data = JSON.parse(compactedStateStr)
-  }
-
-  getCompactedStateStr(): string {
-    return JSON.stringify(this.data)
-  }
-
-  // Don't use this method at server-side
-  uncompact(): MonitorState {
-    let state: MonitorState = {
-      lastUpdate: this.data.lastUpdate,
-      overallUp: this.data.overallUp,
-      overallDown: this.data.overallDown,
-      incident: {},
-      latency: {},
-    }
-
-    Object.keys(this.data.incident).forEach((monitorId) => {
-      state.incident[monitorId] = []
-      const incidents = this.data.incident[monitorId]
-
-      if (
-        incidents.start.length !== incidents.end.length ||
-        incidents.start.length !== incidents.error.length
-      ) {
-        throw new Error(
-          'Inconsistent incident data lengths.'
-        )
-      }
-
-      for (let i = 0; i < incidents.start.length; i++) {
-        state.incident[monitorId].push({
-          start: incidents.start[i],
-          end: incidents.end[i],
-          error: incidents.error[i],
-        })
-      }
-    })
-
-    Object.keys(this.data.latency).forEach((monitorId) => {
-      state.latency[monitorId] = []
-      const latencies = this.data.latency[monitorId]
-      const locUncompacted: string[] = []
-      latencies.loc.c.forEach((count, index) => {
-        for (let i = 0; i < count; i++) {
-          locUncompacted.push(latencies.loc.v[index])
-        }
-      })
-
-      const timeArr = new Uint32Array(hexToBytes(latencies.time).buffer)
-      const pingArr = new Uint16Array(hexToBytes(latencies.ping).buffer)
-
-      if (timeArr.length !== pingArr.length || timeArr.length !== locUncompacted.length) {
-        throw new Error(
-          'Inconsistent latency data lengths.'
-        )
-      }
-
-      for (let i = 0; i < timeArr.length; i++) {
-        state.latency[monitorId].push({
-          time: timeArr[i],
-          ping: pingArr[i],
-          loc: locUncompacted[i],
-        })
-      }
-    })
-
-    return state
-  }
-
-  incidentLen(monitorId: string): number {
-    const incidents = this.data.incident[monitorId]
-    if (!incidents) return 0
-    return incidents.start.length
-  }
-
-  getIncident(monitorId: string, index: number): IncidentRecord {
-    const incidents = this.data.incident[monitorId]
-    if (!incidents || index < 0 || index >= incidents.start.length) {
-      throw new Error('Index out of bounds or monitor not found')
-    }
-    return {
-      start: incidents.start[index],
-      end: incidents.end[index],
-      error: incidents.error[index],
     }
   }
+}
 
-  setIncident(monitorId: string, index: number, incident: IncidentRecord) {
-    const incidents = this.data.incident[monitorId]
-    if (!incidents || index < 0 || index >= incidents.start.length) {
-      throw new Error('Index out of bounds or monitor not found')
-    }
-    incidents.start[index] = incident.start
-    incidents.end[index] = incident.end
-    incidents.error[index] = incident.error
+export async function deleteRows(env: StoreEnv, keys: string[]): Promise<void> {
+  if (keys.length === 0) return
+  const db = requireD1(env)
+
+  for (const chunk of chunked(keys, BIND_CHUNK)) {
+    const placeholders = chunk.map(() => '?').join(', ')
+    await db.prepare(`DELETE FROM ${STORE_TABLE} WHERE key IN (${placeholders})`).bind(...chunk).run()
   }
+}
 
-  appendIncident(monitorId: string, incident: IncidentRecord) {
-    let incidents = this.data.incident[monitorId]
-    if (!incidents) {
-      // Initialize incident arrays
-      this.data.incident[monitorId] = {
-        start: [],
-        end: [],
-        error: [],
-      }
-      incidents = this.data.incident[monitorId]
-    }
-    incidents.start.push(incident.start)
-    incidents.end.push(incident.end)
-    incidents.error.push(incident.error)
+// Parse helper for snapshot rows.
+export function parseRow<T>(snapshot: RowSnapshot | undefined | null): T | null {
+  if (!snapshot || snapshot.value === null) return null
+  return JSON.parse(snapshot.value) as T
+}
+
+export function parseLatencyRow(snapshot: RowSnapshot | undefined | null): LatencyRow | null {
+  return parseRow<LatencyRow>(snapshot)
+}
+
+export function parseIncidentRow(snapshot: RowSnapshot | undefined | null): IncidentRow | null {
+  return parseRow<IncidentRow>(snapshot)
+}
+
+export { incidentKey, latencyKey, META_KEY }
+
+function chunked<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = []
+  for (let start = 0; start < items.length; start += size) {
+    chunks.push(items.slice(start, start + size))
   }
-
-  shiftIncident(monitorId: string) {
-    const incidents = this.data.incident[monitorId]
-    incidents.start.shift()
-    incidents.end.shift()
-    incidents.error.shift()
-  }
-
-  unshiftIncident(monitorId: string, incident: IncidentRecord) {
-    const incidents = this.data.incident[monitorId]
-    incidents.start.unshift(incident.start)
-    incidents.end.unshift(incident.end)
-    incidents.error.unshift(incident.error)
-  }
-
-  latencyLen(monitorId: string): number {
-    const latencies = this.data.latency[monitorId]
-    if (!latencies) return 0
-    return latencies.ping.length / 4 // Uint16Array, 4 characters per entry in hex
-  }
-
-  appendLatency(monitorId: string, record: LatencyRecord) {
-    let latencies = this.data.latency[monitorId]
-    if (!latencies) {
-      // Initialize latency arrays
-      this.data.latency[monitorId] = {
-        time: '',
-        ping: '',
-        loc: {
-          c: [],
-          v: [],
-        },
-      }
-      latencies = this.data.latency[monitorId]
-    }
-
-    // @ts-expect-error
-    latencies.time += new Uint8Array(new Uint32Array([record.time]).buffer).toHex()
-    // @ts-expect-error
-    latencies.ping += new Uint8Array(new Uint16Array([record.ping]).buffer).toHex()
-
-    if (latencies.loc.v[latencies.loc.v.length - 1] !== record.loc) {
-      latencies.loc.c.push(1)
-      latencies.loc.v.push(record.loc)
-    } else {
-      latencies.loc.c[latencies.loc.c.length - 1] += 1
-    }
-  }
-
-  getFirstLatency(monitorId: string): LatencyRecord {
-    let latencies = this.data.latency[monitorId]
-
-    return {
-      time: new Uint32Array(hexToBytes(latencies.time.slice(0, 8)).buffer)[0],
-      ping: new Uint16Array(hexToBytes(latencies.ping.slice(0, 4)).buffer)[0],
-      loc: latencies.loc.v[0],
-    }
-  }
-
-  getLastLatency(monitorId: string): LatencyRecord {
-    let latencies = this.data.latency[monitorId]
-
-    return {
-      time: new Uint32Array(hexToBytes(latencies.time.slice(-8)).buffer)[0],
-      ping: new Uint16Array(hexToBytes(latencies.ping.slice(-4)).buffer)[0],
-      loc: latencies.loc.v[latencies.loc.v.length - 1],
-    }
-  }
-
-  unshiftLatency(monitorId: string) {
-    let latencies = this.data.latency[monitorId]
-
-    latencies.time = latencies.time.slice(8)
-    latencies.ping = latencies.ping.slice(4)
-
-    latencies.loc.c[0] -= 1
-    if (latencies.loc.c[0] === 0) {
-      latencies.loc.c.shift()
-      latencies.loc.v.shift()
-    }
-  }
+  return chunks
 }

@@ -1,46 +1,43 @@
-import { MaintenanceConfig, MonitorState, MonitorTarget } from '@/types/config'
-import { Collapse, Button } from '@mantine/core'
-import { IconCheck, IconX, IconAlertCircle, IconActivity, IconHistory } from '@tabler/icons-react'
+'use client'
+
+import { IconActivity, IconCheck, IconHistory, IconX } from '@tabler/icons-react'
 import { useState } from 'react'
-import MaintenanceAlert from './MaintenanceAlert'
+import { MaintenanceConfig, MonitorState, MonitorTarget } from '@/types/config'
+import { maintenances, pageConfig } from '@/uptime.config'
 import IncidentsDrawer from './IncidentsDrawer'
-import { useTranslation } from 'react-i18next'
-import { pageConfig } from '@/uptime.config'
+import MaintenanceAlert from './MaintenanceAlert'
+import { Button, Collapse, useNow } from './ui'
 
 export default function OverallStatus({
   state,
-  maintenances,
   monitors,
 }: {
   state: MonitorState
-  maintenances: MaintenanceConfig[]
   monitors: MonitorTarget[]
 }) {
-  const { t } = useTranslation('common')
+  const now = useNow(60_000, state.lastUpdate * 1000)
+  const [drawerOpened, setDrawerOpened] = useState(false)
+  const [expandUpcoming, setExpandUpcoming] = useState(false)
 
   let statusString = ''
-  let statusColor = 'text-stone-500'
-  let statusTone = 'bg-stone-950'
-  let StatusIcon = IconAlertCircle
+  let statusColor = 'text-slate-500'
+  let statusTone = 'bg-slate-400'
+  let StatusIcon = IconActivity
 
   if (state.overallUp === 0 && state.overallDown === 0) {
-    statusString = t('No data yet')
-    statusColor = 'text-stone-500'
+    statusString = '暂无监测数据'
   } else if (state.overallUp === 0) {
-    statusString = t('All systems not operational')
+    statusString = '全部服务不可用'
     statusColor = 'text-rose-700'
     statusTone = 'bg-rose-600'
     StatusIcon = IconX
   } else if (state.overallDown === 0) {
-    statusString = t('All systems operational')
+    statusString = '全部服务运行正常'
     statusColor = 'text-emerald-700'
     statusTone = 'bg-emerald-600'
     StatusIcon = IconCheck
   } else {
-    statusString = t('Some systems not operational', {
-      down: state.overallDown,
-      total: state.overallUp + state.overallDown,
-    })
+    statusString = `${state.overallDown} / ${state.overallUp + state.overallDown} 个服务出现故障`
     statusColor = 'text-amber-700'
     statusTone = 'bg-amber-500'
   }
@@ -48,31 +45,18 @@ export default function OverallStatus({
   const totalMonitors = state.overallUp + state.overallDown
   const uptimeTone = state.overallDown === 0 && totalMonitors > 0 ? 'text-emerald-700' : statusColor
 
-  const [expandUpcoming, setExpandUpcoming] = useState(false)
-  const [drawerOpened, setDrawerOpened] = useState(false)
-
-  const now = new Date()
-
-  const activeMaintenances: (Omit<MaintenanceConfig, 'monitors'> & {
-    monitors?: MonitorTarget[]
-  })[] = maintenances
-    .filter((m) => now >= new Date(m.start) && (!m.end || now <= new Date(m.end)))
-    .map((maintenance) => ({
+  const activeMaintenances = maintenances
+    .filter((m) => now >= new Date(m.start).getTime() && (!m.end || now <= new Date(m.end).getTime()))
+    .map((maintenance: MaintenanceConfig) => ({
       ...maintenance,
-      monitors: maintenance.monitors?.map(
-        (monitorId) => monitors.find((mon) => monitorId === mon.id)!
-      ),
+      monitors: maintenance.monitors?.map((id) => monitors.find((monitor) => monitor.id === id)),
     }))
 
-  const upcomingMaintenances: (Omit<MaintenanceConfig, 'monitors'> & {
-    monitors?: (MonitorTarget | undefined)[]
-  })[] = maintenances
-    .filter((m) => now < new Date(m.start))
-    .map((maintenance) => ({
+  const upcomingMaintenances = maintenances
+    .filter((m) => now < new Date(m.start).getTime())
+    .map((maintenance: MaintenanceConfig) => ({
       ...maintenance,
-      monitors: maintenance.monitors?.map(
-        (monitorId) => monitors.find((mon) => monitorId === mon.id)!
-      ),
+      monitors: maintenance.monitors?.map((id) => monitors.find((monitor) => monitor.id === id)),
     }))
 
   return (
@@ -81,7 +65,7 @@ export default function OverallStatus({
         <div className="hero-enter text-left">
           <div className="mb-7 inline-flex items-center gap-3 rounded-full border border-white bg-white/65 px-4 py-2 text-xs font-medium text-slate-500 shadow-[0_2px_12px_rgba(15,23,42,0.025)] backdrop-blur">
             <span className={`status-pulse h-2.5 w-2.5 rounded-full ${statusTone}`} />
-            <span>每 10 分钟检查</span>
+            <span>每 10 分钟检查一轮</span>
           </div>
           <h1 className="hero-title max-w-3xl text-5xl font-semibold tracking-[-0.055em] sm:text-7xl">
             {pageConfig.title || '服务状态'}
@@ -91,14 +75,9 @@ export default function OverallStatus({
             <span>{statusString}</span>
           </div>
           <div className="mt-9 flex flex-wrap gap-3">
-            <Button
-              variant="default"
-              size="sm"
-              leftSection={<IconHistory size={15} />}
-              onClick={() => setDrawerOpened(true)}
-              styles={{ root: { borderRadius: 12, borderColor: '#ffffff', color: '#475569', background: 'rgba(255,255,255,.6)', boxShadow: '0 4px 16px rgba(15,23,42,.035)' } }}
-            >
-              {t('Incidents')}
+            <Button variant="ghost" size="sm" onClick={() => setDrawerOpened(true)}>
+              <IconHistory size={15} />
+              历史故障
             </Button>
           </div>
         </div>
@@ -106,7 +85,9 @@ export default function OverallStatus({
         <div className="status-summary hero-enter rounded-[2rem] border border-white/90 bg-white/65 p-7 shadow-[0_16px_64px_-20px_rgba(15,75,80,0.18)] backdrop-blur-xl">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium tracking-wide text-slate-500">运行概况</span>
-            <span className={`status-emblem ${statusColor}`} aria-hidden="true"><StatusIcon stroke={1.8} size={22} /></span>
+            <span className={`status-emblem ${statusColor}`} aria-hidden="true">
+              <StatusIcon stroke={1.8} size={22} />
+            </span>
           </div>
           <div className="relative z-10 mt-4 grid grid-cols-2 divide-x divide-slate-200/60">
             <div>
@@ -125,50 +106,39 @@ export default function OverallStatus({
           <div className="relative z-10 mt-7 flex items-start gap-2 border-t border-slate-200/60 pt-4 text-[11px] text-slate-400">
             <IconActivity className="mt-0.5 shrink-0" size={15} />
             <span>
-              {t('Last updated on', {
-                date: new Date(state.lastUpdate * 1000).toLocaleString(),
-              })}
+              数据更新于{' '}
+              {state.lastUpdate ? new Date(state.lastUpdate * 1000).toLocaleString('zh-CN', { hour12: false }) : '—'}
             </span>
           </div>
         </div>
       </div>
 
-      {/* Upcoming Maintenance */}
       {upcomingMaintenances.length > 0 && (
         <div className="mx-auto mt-8 max-w-3xl text-center">
-          <div
-            className="mb-2 cursor-pointer text-stone-500 hover:underline"
+          <button
+            type="button"
             onClick={() => setExpandUpcoming(!expandUpcoming)}
+            className="text-sm text-slate-500 transition hover:text-slate-800"
           >
-            {t('upcoming maintenance', { count: upcomingMaintenances.length })}{' '}
-            <span>{expandUpcoming ? t('Hide') : t('Show')}</span>
-          </div>
-
-          <Collapse in={expandUpcoming}>
-            {upcomingMaintenances.map((maintenance, idx) => (
-              <MaintenanceAlert
-                key={`upcoming-${idx}`}
-                maintenance={maintenance}
-                style={{ marginTop: 10 }}
-                upcoming
-              />
-            ))}
+            {upcomingMaintenances.length} 个即将进行的维护
+            {expandUpcoming ? '（收起）' : '（展开）'}
+          </button>
+          <Collapse open={expandUpcoming}>
+            <div className="mt-3 space-y-3">
+              {upcomingMaintenances.map((maintenance, index) => (
+                <MaintenanceAlert key={`upcoming-${index}`} maintenance={maintenance} upcoming />
+              ))}
+            </div>
           </Collapse>
         </div>
       )}
 
-      {/* Active Maintenance */}
-      <div className="mx-auto mt-8 max-w-3xl">
-        {activeMaintenances.map((maintenance, idx) => (
-          <MaintenanceAlert
-            key={`active-${idx}`}
-            maintenance={maintenance}
-            style={{ marginTop: 10 }}
-          />
+      <div className="mx-auto mt-8 max-w-3xl space-y-3">
+        {activeMaintenances.map((maintenance, index) => (
+          <MaintenanceAlert key={`active-${index}`} maintenance={maintenance} />
         ))}
       </div>
 
-      {/* Incidents Drawer */}
       <IncidentsDrawer
         opened={drawerOpened}
         onClose={() => setDrawerOpened(false)}

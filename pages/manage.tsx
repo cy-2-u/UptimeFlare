@@ -14,7 +14,7 @@ export default function ManagePage() {
       </Head>
       <main className="status-shell min-h-screen px-4 py-10 text-slate-950 sm:px-6 lg:px-8">
         <div className="ambient-orb pointer-events-none absolute right-[-6rem] top-20 h-72 w-72 rounded-full bg-blue-200/30 blur-3xl" />
-        <div className="mx-auto max-w-5xl">
+        <div className="mx-auto max-w-6xl">
           <Link
             href="/"
             className="text-sm font-semibold text-slate-500 transition-colors hover:text-slate-950"

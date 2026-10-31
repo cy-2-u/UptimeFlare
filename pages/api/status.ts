@@ -1,9 +1,12 @@
-import { getFromStore } from '@/worker/src/store'
 import type { NextRequest } from 'next/server'
 import type { RuntimeEnv } from '@/util/runtimeConfig'
+import { readCompactedStateStr } from '@/util/stateReader'
 
 export const runtime = 'edge'
 
+// Full compacted state for the client-side refresh loop. Same origin check as
+// the upstream project, but the payload itself is public data, so it caches
+// at the edge for a minute.
 export default async function handler(req: NextRequest) {
   const host = req.headers.get('host')
   const origin = req.headers.get('origin')
@@ -12,9 +15,7 @@ export default async function handler(req: NextRequest) {
   let isAllowed = (_url: string | null) => false
 
   if (host) {
-    // Dynamically determine the root domain to allow.
-    // Examples: status.example.com -> example.com, localhost:3000 -> localhost.
-    const parts = host.split(':')[0].split('.') // Remove port if present
+    const parts = host.split(':')[0].split('.')
     let rootDomain = host.split(':')[0]
     if (parts.length > 2 && !/^\d+\.\d+\.\d+\.\d+$/.test(rootDomain)) {
       rootDomain = parts.slice(1).join('.')
@@ -31,10 +32,9 @@ export default async function handler(req: NextRequest) {
     }
   }
 
-  // Configure CORS headers for allowed origins
   const corsHeaders: Record<string, string> = {
     'content-type': 'application/json',
-    'cache-control': 'public, s-maxage=10, stale-while-revalidate=59',
+    'cache-control': 'public, s-maxage=60, stale-while-revalidate=300',
   }
 
   if (origin && isAllowed(origin)) {
@@ -42,28 +42,26 @@ export default async function handler(req: NextRequest) {
     corsHeaders['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
   }
 
-  // Handle OPTIONS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
 
-  // Block requests with Origin/Referer from unauthorized domains
   if (origin && !isAllowed(origin)) {
     return new Response('Forbidden: Origin not allowed', { status: 403 })
   }
   if (referer && !isAllowed(referer)) {
-    // Optional: stricter referer check, but beware of privacy settings stripping referers
     return new Response('Forbidden: Referer not allowed', { status: 403 })
   }
+
   try {
     const env = process.env as unknown as RuntimeEnv
-    const compactedStateStr = await getFromStore(env, 'state')
+    const compactedStateStr = await readCompactedStateStr(env)
     return new Response(JSON.stringify({ compactedStateStr }), {
       status: 200,
       headers: corsHeaders,
     })
-  } catch (e: unknown) {
-    const message = e instanceof Error ? e.message : 'Failed to read status'
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Failed to read status'
     return new Response(JSON.stringify({ error: message }), {
       status: 500,
       headers: { 'content-type': 'application/json' },

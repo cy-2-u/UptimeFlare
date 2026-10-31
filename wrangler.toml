@@ -1,18 +1,15 @@
 name = "uptimeflare"
+pages_build_output_dir = ".vercel/output/static"
 compatibility_date = "2025-04-02"
 compatibility_flags = [ "nodejs_compat" ]
 
-[triggers]
-crons = [ "*/10 * * * *" ]
-
+# Local dev bindings for `npm run preview` (wrangler pages dev).
+# The cross-script Durable Object binding only works against the deployed
+# worker; locally the monitor list falls back to the D1 `runtime_monitors` key.
 [[d1_databases]]
 binding = "UPTIMEFLARE_D1"
 database_name = "uptimeflare_d1"
 database_id = "00000000-0000-0000-0000-000000000000"
-
-[[kv_namespaces]]
-binding = "UPTIMEFLARE_CONFIG"
-id = "00000000000000000000000000000000"
 
 [[durable_objects.bindings]]
 name = "MONITOR_SCHEDULER_DO"

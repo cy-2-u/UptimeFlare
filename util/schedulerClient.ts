@@ -9,9 +9,10 @@ export class SchedulerError extends Error {
   }
 }
 
+// Fetch the page-managed monitor list from the MonitorScheduler Durable Object.
 export async function schedulerMonitors(
   env: RuntimeBindings,
-  method: 'GET' | 'POST' | 'DELETE' = 'GET',
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET',
   body?: MonitorTarget | { id: string }
 ): Promise<MonitorTarget[]> {
   const namespace = env.MONITOR_SCHEDULER_DO

@@ -1,102 +1,144 @@
-# 服务状态页通知配置
+# 服务状态（UptimeFlare 重写版）
 
-这个项目的通知代码集中在 `worker/src/notification.ts`。想换成自己的推送渠道，主要改这个文件。
+跑在 Cloudflare 免费额度上的网站可用性监控 + 状态页。本目录是原项目的完全重写：
+更精简的代码、按监控分行的 D1 存储、通知后置到持久化成功之后、页面边缘缓存、
+无 Terraform / Python 的纯 Node 部署链路。
 
-## 开启或关闭通知
+## 架构
 
-打开 `worker/src/notification.ts`，看最前面的函数：
-
-```ts
-export function shouldSendNotification() {
-  return true
-}
+```
+┌─ Worker: uptimeflare_worker ─────────────────────────────────┐
+│  Durable Object Alarm（主调度，每 10 分钟自续）               │
+│    └─ runChecks: 读快照 → 并发检查(失败2次确认) → 行级转换    │
+│         → 单批 CAS 原子写 D1 → 写成功后才发通知               │
+│  Cron 0 * * * *（每小时，仅监督：缺失/过期/数据停滞时重新上弦）│
+│  GET /health   健康检查（也会上弦闹钟）                       │
+│  GET /trigger  手动触发一轮检查（需 MONITOR_TRIGGER_SECRET）  │
+└──────────────────────────────────────────────────────────────┘
+┌─ Pages: uptimeflare（Next.js, next-on-pages）────────────────┐
+│  /            SSR 状态页，边缘缓存 60s（管理员导航客户端判定）│
+│  /manage      站点管理：添加 / 编辑 / 删除                    │
+│  /api/status  全量状态（轮询用，边缘缓存 60s）                │
+│  /api/data    轻量摘要                                        │
+│  /api/badge   Shields.io 徽章                                 │
+│  /api/monitors|admin  管理接口                                │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-`return true` 是开启通知。
+### D1 行式存储（表 `uptimeflare`）
 
-`return false` 是关闭通知。
+| key | 内容 | 写入频率 |
+|---|---|---|
+| `state:meta` | lastUpdate、在线/宕机计数 | 每轮 |
+| `state:lat:<id>` | 延迟（hex 压缩，保留 12h）、最近状态、`startedAt`、通知标记 | 每轮 |
+| `state:inc:<id>` | 事件（柱状压缩，保留 90 天） | 仅事件变化时 |
+| `admin_credentials` | 管理员凭证 | 变更时 |
+| `runtime_monitors` | 旧版监控列表（迁移源），调度器首次读取后自动删除 | 迁移读一次 |
 
-## 修改推送接口
+每轮检查 = 一次 `db.batch()`，其中每条写入都带 CAS（`WHERE value = 旧值`），
+批量原子生效；写失败或竞争则整轮不落盘、也不发通知（下一轮重新判定）。
 
-在 `worker/src/notification.ts` 里找到这段：
+相比旧版单行全量 JSON：单次写更小、CPU 随监控数量平滑增长、
+事件行只在变化时写（稳定运行时几乎零写入）。
 
-```ts
-// 通知区域修改开始
-const WEBHOOK_URL = 'https://api.chuckfang.com/%E7%AC%AC%E4%BA%94%E4%B8%AA%E5%AD%A3%E8%8A%82'
-const WEBHOOK_TIMEOUT_MS = 10000
-const WEBHOOK_HEADERS: Record<string, string> = {}
+## 配置
 
-function buildWebhookBody(message: string) {
-  return {
-    msg: message,
-  }
-}
-// 通知区域修改结束
-```
+`uptime.config.ts`：页面标题、分组、静态 monitors、通知设置（timeZone、
+gracePeriod、skipNotificationIds、skipErrorChangeNotification）、维护窗口。
 
-把 `WEBHOOK_URL` 改成你的推送 API 地址。
+### 通知
 
-如果你的接口需要请求头，就改 `WEBHOOK_HEADERS`。
+推送渠道集中在 `worker/src/notify.ts`（带 `通知区域修改开始/结束` 标记）：
 
-如果你的接口需要不同的请求字段，就改 `buildWebhookBody()` 返回的对象。
+- `shouldSendNotification()` 返回 `false` 关闭全部通知
+- `WEBHOOK_URL` / `WEBHOOK_HEADERS` / `buildWebhookBody()` 自定义推送接口
+- `buildNotificationMessage()` 自定义文案（恢复 / 刚发现 / 持续中三种）
 
-## 修改通知文案
+通知在**状态成功写入之后**才发出，不会出现"通知说挂了页面却正常"。
+`gracePeriod` 语义为"宕机持续 N 分钟后发送第一条通知"，采用持久标记，
+即使某轮检查被跳过也不会漏发或重发。
 
-通知文案也在 `worker/src/notification.ts`，函数名是 `buildNotificationMessage()`。
+### 站点管理
 
-它会处理三种情况：恢复、刚发现故障、故障持续中。只改里面返回的文字就行。
+`/manage` 支持添加、**编辑**、删除（两击确认）。编辑沿用同一个 id，
+不会丢历史数据；删除会连同事件与延迟数据一起清理（两阶段，失败自动重试）。
 
-## GitHub Actions 需要配置的变量
-
-仓库的 Actions Secrets 里需要配置：
-
-- `CLOUDFLARE_API_TOKEN`
-- `CLOUDFLARE_ACCOUNT_ID`
-
-这两个变量用于部署到 Cloudflare。通知接口自己的凭证按你的 webhook 要求写在 `worker/src/notification.ts` 的通知区域里。
-
-## Worker 状态检查与手动触发
-
-监测主调度改成 Durable Object Alarm，每 10 分钟自己续期。Cloudflare Cron 只负责把闹钟重新上弦；Cron 静默停发时，Alarm 仍会继续跑。
-
-首次部署后访问一次 `/health` 或 `/trigger`，闹钟就会开始自己续期。
-
-Worker 还提供两个接口方便排查问题。
+## 运维
 
 ### 健康检查
 
-浏览器打开 Worker 的访问地址，后面加 `/health`。地址在 Cloudflare Dashboard 的 Workers 页面能看到，形如 `https://uptimeflare_worker.<你的子域>.workers.dev`：
-
-```text
+```
 https://uptimeflare_worker.<你的子域>.workers.dev/health
 ```
 
-返回内容：
+- `lastRunAgoSec < 600`：最近一轮检查正常
+- `nextAlarmInSec` 有值：DO 闹钟在跳
+- `monitorCount`：当前监控数量
 
-```json
-{"healthy":true,"workerLocation":"HKG","lastUpdate":1787677858,"lastRunAgoSec":78,"nextAlarm":1787678458000,"nextAlarmInSec":522,"monitorCount":4,"stateBytes":2812,"serverTime":1787677936}
+### 手动触发
+
+`/trigger`（需要 `Authorization: Bearer <MONITOR_TRIGGER_SECRET>` 或 `?secret=`）
+立即跑一轮，改完配置想立刻验证时用。
+
+### 调度模型
+
+闹钟（DO Alarm）是唯一计时器，每 10 分钟自续；每小时一次的 cron 只做监督：
+闹钟丢失、过期，或 `lastUpdate` 停滞超过 25 分钟时重新上弦。
+部署完成后访问一次 `/health`（CI 末步会自动做）即可上弦。
+
+## 本地开发
+
+```bash
+npm install            # 前端
+cd worker && npm install
+npm run dev            # worker（wrangler dev --test-scheduled）
+npm run preview        # 前端 next-on-pages 构建 + wrangler pages dev
 ```
 
-只需要看 `lastRunAgoSec` 和 `nextAlarmInSec`：
+Worker 定时任务手动触发：`http://127.0.0.1:8787/cdn-cgi/handler/scheduled`
 
-`lastRunAgoSec` 小于 600，说明最近 10 分钟写过监测数据。`nextAlarmInSec` 有值，说明 Durable Object 闹钟还在。`lastRunAgoSec` 接近或超过 600，去 Dashboard 看实时日志。
+## 测试
 
-`monitorCount` 是当前监控的站点数量，`stateBytes` 是状态数据的大小，偶尔看一眼确认数据量没有异常增长即可。
-
-### 手动触发一次检查
-
-把 `/health` 换成 `/trigger` 访问，会立刻跑一轮检查，不用等 cron。改完监控想马上验证效果时用它：
-
-```text
-https://uptimeflare_worker.<你的子域>.workers.dev/trigger
+```bash
+cd worker
+npm test        # 47 个用例：状态转换、存储 CAS、调度、迁移、通知、检查
+npx tsc --noEmit
 ```
 
-返回 `{"triggered":true,"startedAt":...}`。检查结果写入数据后，状态页下一次刷新就能看到。
+## 部署
 
-### 本地手动触发定时任务
+推送到 `main` 或手动触发 GitHub Actions。仓库 Secrets：
 
-本地用 `wrangler dev --test-scheduled` 起 Worker 时，手动触发定时任务走：
+- `CLOUDFLARE_API_TOKEN`（需要 D1、Workers、KV、Pages 权限）
+- `CLOUDFLARE_ACCOUNT_ID`（可选，缺省时自动通过 API 获取）
 
-```text
-http://127.0.0.1:8787/cdn-cgi/handler/scheduled
-```
+流程：`npm ci` → worker 测试 → worker dry-run 构建 → next-on-pages 构建 →
+确保 D1/表存在 → 生成 `wrangler.deploy.toml`（注入真实 D1 ID，KV 仅在旧命名空间
+还存在时保留供迁移用）→ 部署 Worker → 配置 Pages 绑定（替代 Terraform）→
+部署 Pages → `/health` 冒烟检查（同时上弦）。
+
+### 从旧版迁移
+
+首次部署新版 Worker 后，第一次 `/health` 或 cron 触发会自动执行
+`worker/src/migrate.ts`：把旧的单行 `state` 拆成行式存储（进行中的事件标记为
+"已通知"，避免迁移后重复告警），并把仍只存在于 KV 的管理员凭证复制进 D1。
+
+整个迁移在**同一个原子批次**内完成，且随批删除旧 `state` 行——迁移要么完整
+成功（新数据可用、旧行消失），要么完全不动（旧数据原样保留，下轮重试），
+不存在中间态。旧监控列表行 `runtime_monitors` 在调度器首次读取监控列表
+（确认 DO storage 已成为权威数据源）后自动删除，删除失败会自动重试。CI 末尾
+的清理步骤会在健康检查确认迁移完成后，自动删除不再需要的旧 KV 命名空间
+`uptimeflare_config`（守卫条件不满足时跳过，下次部署重试）。
+
+## 与旧版的主要差异
+
+- 删除：检查代理体系（worker://、globalping://、HTTP 代理、RemoteChecker DO、
+  proxy/ 目录）、i18n、Mantine、chart.js/moment、Terraform、Python 脚本、
+  Docker 文件、密码保护中间件
+- 存储：单行全量 JSON → 按监控分行 + 批量 CAS；删除 pendingDeletes 全量重写，
+  改为轻量行删除
+- 调度：cron */10 → cron 每小时监督 + DO Alarm 主调度 + 停滞自愈
+- 前端：Mantine/图表库 → 纯 Tailwind + 内联 SVG 折线图；匿名页面边缘缓存 60s；
+  轮询 10 分钟 → 2 分钟；卡片"距上次检查"实时跳动
+- 会话：长期 cookie → HMAC 签名 + 30 天有效期（改密码即全端下线）
+- 通知：先写后发；gracePeriod 用持久标记替代 ±30s 窗口

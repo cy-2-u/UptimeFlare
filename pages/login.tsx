@@ -2,6 +2,7 @@ import Head from 'next/head'
 import Link from 'next/link'
 import { FormEvent, useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
+import { Input } from '@/components/ui'
 
 type AdminStatus = {
   hasAdmin: boolean
@@ -62,36 +63,37 @@ export default function LoginPage() {
         <div className="ambient-orb pointer-events-none absolute right-[-6rem] top-20 h-72 w-72 rounded-full bg-blue-200/30 blur-3xl" />
         <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-7xl items-center justify-center">
           <section className="w-full max-w-md rounded-[2rem] border border-white/70 bg-white/85 p-6 shadow-[0_24px_70px_rgba(15,23,42,0.10)] backdrop-blur-xl sm:p-8">
-            <Link href="/" className="text-sm font-semibold text-slate-500 transition hover:text-slate-950">
+            <Link
+              href="/"
+              className="text-sm font-semibold text-slate-500 transition hover:text-slate-950"
+            >
               返回状态页
             </Link>
             <h1 className="mt-8 text-4xl font-semibold tracking-[-0.055em] text-slate-950">
               {isSetup ? '设置管理员' : '管理员登录'}
             </h1>
             <p className="mt-3 text-sm leading-6 text-slate-600">
-              {isSetup
-                ? '创建账号，开始管理站点。'
-                : '登录你的管理账号。'}
+              {isSetup ? '创建账号，开始管理站点。' : '登录你的管理账号。'}
             </p>
 
             <form className="mt-7 space-y-4" onSubmit={submit}>
               <label className="block">
                 <span className="text-sm font-medium text-slate-700">账号</span>
-                <input
+                <Input
                   value={username}
                   onChange={(event) => setUsername(event.target.value)}
                   autoComplete="username"
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white"
+                  className="mt-2"
                 />
               </label>
               <label className="block">
                 <span className="text-sm font-medium text-slate-700">密码</span>
-                <input
+                <Input
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   type="password"
                   autoComplete={isSetup ? 'new-password' : 'current-password'}
-                  className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-slate-400 focus:bg-white"
+                  className="mt-2"
                 />
               </label>
               <button

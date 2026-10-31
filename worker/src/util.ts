@@ -1,7 +1,3 @@
-import { MonitorTarget } from '../../types/config'
-import { maintenances, workerConfig } from '../../uptime.config'
-import { sendNotification } from './notification'
-
 let cachedColo: string | undefined
 
 function coloFromRequest(request?: Request): string | undefined {
@@ -44,48 +40,4 @@ function withTimeout<T>(millis: number, promise: Promise<T>): Promise<T> {
   return Promise.race([promise, timeout])
 }
 
-const formatAndNotify = async (
-  monitor: MonitorTarget,
-  isUp: boolean,
-  timeIncidentStart: number,
-  timeNow: number,
-  reason: string
-) => {
-  // Skip notification if monitor is in the skip list
-  const skipList = workerConfig.notification?.skipNotificationIds
-  if (skipList && skipList.includes(monitor.id)) {
-    console.log(`Skipping notification for ${monitor.name} (${monitor.id} in skipNotificationIds)`)
-    return
-  }
-
-  // Skip notification if monitor is in maintenance
-  const maintenanceList = maintenances
-    .filter(
-      (m) =>
-        new Date(timeNow * 1000) >= new Date(m.start) &&
-        (!m.end || new Date(timeNow * 1000) <= new Date(m.end))
-    )
-    .map((e) => e.monitors || [])
-    .flat()
-
-  if (maintenanceList.includes(monitor.id)) {
-    console.log(`Skipping notification for ${monitor.name} (in maintenance)`)
-    return
-  }
-
-  await sendNotification({
-    monitor,
-    isUp,
-    timeIncidentStart,
-    timeNow,
-    reason,
-    timeZone: workerConfig.notification?.timeZone ?? 'Etc/GMT',
-  })
-}
-
-export {
-  getWorkerLocation,
-  fetchTimeout,
-  withTimeout,
-  formatAndNotify,
-}
+export { fetchTimeout, getWorkerLocation, withTimeout }

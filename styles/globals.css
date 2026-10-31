@@ -36,6 +36,7 @@ body {
 
 .hero-enter { animation: gentle-arrival .7s ease-out both; }
 .status-summary.hero-enter { animation-delay: .1s; }
+
 .status-emblem {
   display: grid;
   place-items: center;

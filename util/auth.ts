@@ -3,6 +3,7 @@ import type { RuntimeEnv } from './runtimeConfig'
 
 const ADMIN_KEY = 'admin_credentials'
 export const SESSION_COOKIE = 'status_admin_session'
+const SESSION_TTL_SEC = 30 * 24 * 60 * 60
 
 type AdminCredentials = {
   username: string
@@ -10,9 +11,13 @@ type AdminCredentials = {
   passwordHash: string
 }
 
-type AdminCookie = {
-  username: string
-  passwordHash: string
+// The session token is an HMAC-signed payload with an expiry. The stored
+// password hash doubles as the signing secret, so changing the password
+// invalidates every existing session immediately.
+type SessionPayload = {
+  u: string
+  ph: string
+  exp: number
 }
 
 function bytesToHex(bytes: ArrayBuffer) {
@@ -34,11 +39,18 @@ async function hashPassword(password: string, salt: string) {
   return bytesToHex(await crypto.subtle.digest('SHA-256', data))
 }
 
-function encodeAdminCookie(credentials: AdminCredentials) {
-  const value = JSON.stringify({
-    username: credentials.username,
-    passwordHash: credentials.passwordHash,
-  } satisfies AdminCookie)
+async function hmacSign(secret: string, message: string) {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  )
+  return bytesToHex(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(message)))
+}
+
+function b64urlEncode(value: string) {
   const bytes = new TextEncoder().encode(value)
   let binary = ''
   bytes.forEach((byte) => {
@@ -47,7 +59,7 @@ function encodeAdminCookie(credentials: AdminCredentials) {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
-function decodeAdminCookie(token: string): AdminCookie | null {
+function b64urlDecode(token: string): string | null {
   try {
     const base64 = token.replace(/-/g, '+').replace(/_/g, '/')
     const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')
@@ -56,10 +68,7 @@ function decodeAdminCookie(token: string): AdminCookie | null {
     for (let index = 0; index < binary.length; index += 1) {
       bytes[index] = binary.charCodeAt(index)
     }
-
-    const value = JSON.parse(new TextDecoder().decode(bytes)) as AdminCookie
-    if (!value.username || !value.passwordHash) return null
-    return value
+    return new TextDecoder().decode(bytes)
   } catch {
     return null
   }
@@ -108,23 +117,43 @@ export async function verifyAdmin(env: RuntimeEnv, username: string, password: s
 export async function createSession(env: RuntimeEnv, credentials?: AdminCredentials) {
   const admin = credentials ?? (await getAdminCredentials(env))
   if (!admin) throw new Error('管理员不存在')
-  return encodeAdminCookie(admin)
+
+  const payload: SessionPayload = {
+    u: admin.username,
+    ph: admin.passwordHash,
+    exp: Math.floor(Date.now() / 1000) + SESSION_TTL_SEC,
+  }
+  const payloadStr = b64urlEncode(JSON.stringify(payload))
+  return `${payloadStr}.${await hmacSign(admin.passwordHash, payloadStr)}`
 }
 
 export async function validateSession(env: RuntimeEnv, token?: string | null) {
   if (!token) return false
-  const cookie = decodeAdminCookie(token)
-  if (!cookie) return false
+  const dotIndex = token.lastIndexOf('.')
+  if (dotIndex <= 0) return false
+  const payloadStr = token.slice(0, dotIndex)
+  const signature = token.slice(dotIndex + 1)
+
+  const payloadJson = b64urlDecode(payloadStr)
+  if (!payloadJson) return false
+
+  let payload: SessionPayload
+  try {
+    payload = JSON.parse(payloadJson) as SessionPayload
+  } catch {
+    return false
+  }
+  if (!payload.u || !payload.ph || typeof payload.exp !== 'number') return false
+  if (payload.exp <= Math.floor(Date.now() / 1000)) return false
 
   const credentials = await getAdminCredentials(env)
-  return Boolean(
-    credentials &&
-      credentials.username === cookie.username &&
-      credentials.passwordHash === cookie.passwordHash
-  )
+  if (!credentials) return false
+  if (credentials.username !== payload.u || credentials.passwordHash !== payload.ph) return false
+
+  return (await hmacSign(credentials.passwordHash, payloadStr)) === signature
 }
 
-export async function clearSession(env: RuntimeEnv) {
+export async function clearSession(_env: RuntimeEnv) {
   return
 }
 
@@ -200,7 +229,7 @@ export function sessionCookie(token: string, secure = true) {
     'Path=/',
     'HttpOnly',
     'SameSite=Lax',
-    'Max-Age=2592000',
+    `Max-Age=${SESSION_TTL_SEC}`,
   ]
   if (secure) parts.push('Secure')
   return parts.join('; ')

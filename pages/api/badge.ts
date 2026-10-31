@@ -1,6 +1,8 @@
-import { NextRequest } from 'next/server'
-import { CompactedMonitorStateWrapper, getFromStore } from '@/worker/src/store'
+import type { NextRequest } from 'next/server'
+import { latencyKey } from '@/lib/state-format'
 import type { RuntimeEnv } from '@/util/runtimeConfig'
+import { getRuntimeValue } from '@/util/runtimeConfig'
+import type { LatencyRow } from '@/lib/state-format'
 
 export const runtime = 'edge'
 
@@ -27,13 +29,13 @@ function errorBadge(label: string, message: string): BadgePayload {
   }
 }
 
+// Shields.io-style badge endpoint. Reads only the monitor's latency row.
 export default async function handler(req: NextRequest): Promise<Response> {
   try {
     const url = new URL(req.url)
 
     const monitorId = url.searchParams.get('id')
     const label = url.searchParams.get('label') ?? monitorId ?? 'status'
-
     const upMsg = url.searchParams.get('up') ?? 'UP'
     const downMsg = url.searchParams.get('down') ?? 'DOWN'
     const colorUp = url.searchParams.get('colorUp') ?? 'brightgreen'
@@ -47,15 +49,12 @@ export default async function handler(req: NextRequest): Promise<Response> {
     }
 
     const env = process.env as unknown as RuntimeEnv
-    const compactedState = new CompactedMonitorStateWrapper(await getFromStore(env, 'state'))
+    const raw = await getRuntimeValue(env, latencyKey(monitorId))
 
     let isUp: boolean | null = null
-    if (compactedState.incidentLen(monitorId) > 0) {
-      const lastIncident = compactedState.getIncident(
-        monitorId,
-        compactedState.incidentLen(monitorId) - 1
-      )
-      isUp = lastIncident.end !== null
+    if (raw !== null) {
+      const row = JSON.parse(raw) as LatencyRow
+      isUp = row.lastStatus === null ? null : row.lastStatus === 'up'
     }
 
     const badge: BadgePayload = {
@@ -65,11 +64,9 @@ export default async function handler(req: NextRequest): Promise<Response> {
       color: isUp === null ? 'lightgrey' : isUp ? colorUp : colorDown,
     }
 
-    return new Response(JSON.stringify(badge), {
-      headers: jsonHeaders,
-    })
-  } catch (err) {
-    console.error('Error rendering badge API:', err)
+    return new Response(JSON.stringify(badge), { headers: jsonHeaders })
+  } catch (error) {
+    console.error('Error rendering badge API:', error)
     return new Response(JSON.stringify(errorBadge('status', 'error')), {
       headers: jsonHeaders,
       status: 500,

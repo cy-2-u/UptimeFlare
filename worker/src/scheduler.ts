@@ -1,27 +1,61 @@
 import type { MonitorTarget } from '../../types/config'
 import { workerConfig } from '../../uptime.config'
-import { getStoredMonitors, type RuntimeEnv } from '../../util/runtimeConfig'
+import { META_KEY, incidentKey, latencyKey } from '../../lib/state-format'
+import {
+  getStoredMonitors,
+  STORED_MONITORS_KEY,
+  type RuntimeEnv,
+} from '../../util/runtimeConfig'
 import { SchedulerError } from '../../util/schedulerClient'
 import { RunCoordinator } from './coordinator'
-import { CompactedMonitorStateWrapper, compareAndSetStore, getFromStore } from './store'
+import { deleteRows, readValue } from './store'
 
 const CHECK_INTERVAL_MS = 10 * 60 * 1000
+const STALE_AFTER_SEC = 25 * 60
+const LEGACY_MONITORS_CLEANED = 'legacy_monitors_row_deleted'
+
+// The minimal storage surface the scheduler needs; DurableObjectStorage
+// satisfies it structurally (and tests provide an in-memory fake).
+type SchedulerStorage = Pick<
+  DurableObjectStorage,
+  'get' | 'put' | 'delete' | 'getAlarm' | 'setAlarm' | 'transaction'
+>
 
 export class SchedulerState {
   private coordinator = new RunCoordinator()
 
   constructor(
-    private storage: DurableObjectStorage,
+    private storage: SchedulerStorage,
     private env: RuntimeEnv,
     private check: (monitors: MonitorTarget[]) => Promise<void>
   ) {}
 
+  // Arm the alarm unless a future one already exists. Cron and /health both
+  // call this; the alarm itself is the real 10-minute scheduler.
   async ensureAlarm(): Promise<{ nextAlarm: number }> {
     const existing = await this.storage.getAlarm()
     if (existing !== null && existing > Date.now()) return { nextAlarm: existing }
     const nextAlarm = Date.now() + 1000
     await this.storage.setAlarm(nextAlarm)
     return { nextAlarm }
+  }
+
+  // Cron supervisor: normally a no-op. Re-arms a missing/expired alarm and
+  // force-re-arms when the stored state went stale (e.g. an alarm that exists
+  // but stopped persisting rounds), so a broken alarm cannot stay broken long.
+  // A missing or zero meta row means a fresh install — trust the armed alarm.
+  async healIfStale(): Promise<{ healed: boolean }> {
+    const alarm = await this.storage.getAlarm()
+    if (alarm !== null && alarm > Date.now()) {
+      const metaRaw = await readValue(this.env, META_KEY).catch(() => null)
+      const lastUpdate = metaRaw ? ((JSON.parse(metaRaw).lastUpdate as number) ?? 0) : 0
+      if (lastUpdate === 0 || Date.now() / 1000 - lastUpdate < STALE_AFTER_SEC) {
+        return { healed: false }
+      }
+    }
+
+    await this.storage.setAlarm(Date.now() + 1000)
+    return { healed: true }
   }
 
   runNow(): Promise<void> {
@@ -44,11 +78,29 @@ export class SchedulerState {
 
   private async readMonitors(): Promise<MonitorTarget[]> {
     const stored = await this.storage.get<MonitorTarget[]>('monitors')
-    if (stored !== undefined) return stored
-    // Migrate the existing KV/D1 configuration once; subsequent reads use the DO.
+    if (stored !== undefined) {
+      await this.cleanupLegacyMonitorsRow()
+      return stored
+    }
+    // One-time migration of the legacy D1 monitor list; later reads use the DO.
     const monitors = await getStoredMonitors({ ...this.env, MONITOR_SCHEDULER_DO: undefined })
     await this.storage.put('monitors', monitors)
+    await this.cleanupLegacyMonitorsRow()
     return monitors
+  }
+
+  // The D1 `runtime_monitors` row is dead weight once the DO storage list is
+  // authoritative. Delete it exactly once: a DO flag prevents repeats, and a
+  // failed delete retries on later reads.
+  private async cleanupLegacyMonitorsRow(): Promise<void> {
+    try {
+      if (await this.storage.get<boolean>(LEGACY_MONITORS_CLEANED)) return
+      await deleteRows(this.env, [STORED_MONITORS_KEY])
+      await this.storage.put(LEGACY_MONITORS_CLEANED, true)
+      console.log('Legacy runtime_monitors row removed.')
+    } catch (error) {
+      console.log('Legacy monitor row cleanup deferred: ' + error)
+    }
   }
 
   addMonitor(monitor: MonitorTarget): Promise<MonitorTarget[]> {
@@ -64,6 +116,22 @@ export class SchedulerState {
     })
   }
 
+  // Edit a page-managed monitor in place. The id is the history key and can
+  // never change, so edits keep all incidents and latency data.
+  updateMonitor(monitor: MonitorTarget): Promise<MonitorTarget[]> {
+    return this.coordinator.mutate(async () => {
+      const monitors = await this.readMonitors()
+      const index = monitors.findIndex((item) => item.id === monitor.id)
+      if (index === -1) {
+        throw new SchedulerError('只能编辑在页面中添加的监测项', 404)
+      }
+      const next = monitors.slice()
+      next[index] = monitor
+      await this.storage.put('monitors', next)
+      return next
+    })
+  }
+
   deleteMonitor(id: string): Promise<MonitorTarget[]> {
     return this.coordinator.mutate(async () => {
       const monitors = await this.readMonitors()
@@ -71,8 +139,9 @@ export class SchedulerState {
       if (!monitors.some((item) => item.id === id) && !pending.includes(id)) {
         throw new SchedulerError('只能删除在页面中添加的监测项', 404)
       }
-      // A failed read must not modify configuration or reset monitoring history.
-      await getFromStore(this.env, 'state')
+      // A failed state read means D1 may be unavailable; abort so we never
+      // forget a monitor whose history rows cannot be cleaned up.
+      await readValue(this.env, META_KEY)
       const next = monitors.filter((item) => item.id !== id)
       await this.storage.transaction(async (txn) => {
         await txn.put('monitors', next)
@@ -83,26 +152,14 @@ export class SchedulerState {
     })
   }
 
+  // Two-phase history cleanup: the DO commit above is atomic, the D1 row
+  // deletes are retried from here until they succeed.
   private async finishDeletes(): Promise<void> {
     const pending = (await this.storage.get<string[]>('pendingDeletes')) ?? []
     if (!pending.length) return
-    const raw = await getFromStore(this.env, 'state')
-    if (raw !== null) {
-      const state = new CompactedMonitorStateWrapper(raw)
-      for (const id of pending) {
-        delete state.data.incident[id]
-        delete state.data.latency[id]
-      }
-      state.data.overallUp = 0
-      state.data.overallDown = 0
-      for (const incident of Object.values(state.data.incident)) {
-        if (!incident.end.length) continue
-        if (incident.end[incident.end.length - 1] === null) state.data.overallDown++
-        else state.data.overallUp++
-      }
-      await compareAndSetStore(this.env, 'state', raw, state.getCompactedStateStr())
-    }
-    // The journal survives a restart between the DO commit and D1 cleanup.
+
+    const keys = pending.flatMap((id) => [latencyKey(id), incidentKey(id)])
+    await deleteRows(this.env, keys)
     await this.storage.delete('pendingDeletes')
   }
 }

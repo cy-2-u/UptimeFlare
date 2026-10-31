@@ -1,4 +1,4 @@
-import { NextRequest } from 'next/server'
+import type { NextRequest } from 'next/server'
 import {
   clearSession,
   createAdmin,
@@ -30,10 +30,6 @@ function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback
 }
 
-function readBody(input: unknown) {
-  return input && typeof input === 'object' ? (input as Record<string, unknown>) : {}
-}
-
 export default async function handler(req: NextRequest): Promise<Response> {
   const env = process.env as unknown as RuntimeEnv
   if (req.method === 'OPTIONS') return new Response(null, { headers })
@@ -48,7 +44,7 @@ export default async function handler(req: NextRequest): Promise<Response> {
   if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
 
   try {
-    const body = readBody(await req.json())
+    const body = ((await req.json()) as Record<string, unknown>) ?? {}
     const action = String(body.action ?? '')
     const username = String(body.username ?? '')
     const password = String(body.password ?? '')

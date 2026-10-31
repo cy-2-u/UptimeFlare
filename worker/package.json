@@ -1,17 +1,17 @@
 {
   "name": "uptimeworker",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "deploy": "wrangler deploy",
     "dev": "wrangler dev --test-scheduled --persist-to ../.wrangler/state",
     "start": "wrangler dev",
-    "test": "tsx --test src/**/*.test.ts"
+    "test": "tsx --test src/**/*.test.ts test/**/*.test.ts"
   },
   "devDependencies": {
     "tsx": "^4.21.0",
     "@types/node": "^20.0.0",
-    "@cloudflare/workers-types": "^4.20250410.0",
+    "@cloudflare/workers-types": "^5.20261023.1",
     "typescript": "^5.0.4",
     "wrangler": "^4.54.0"
   }
