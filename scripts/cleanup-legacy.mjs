@@ -40,7 +40,8 @@ const accountId = env('CLOUDFLARE_ACCOUNT_ID')
 const databaseId = env('D1_ID')
 if (!accountId || !databaseId) throw new Error('CLOUDFLARE_ACCOUNT_ID / D1_ID missing')
 
-const { result: namespaces } = await api(`/accounts/${accountId}/storage/kv/namespaces?per_page=1000`)
+// api() already resolves to the response body's `result` field.
+const namespaces = await api(`/accounts/${accountId}/storage/kv/namespaces?per_page=1000`)
 const legacy = namespaces.find((ns) => ns.title === KV_TITLE)
 if (!legacy) {
   console.log('Legacy KV namespace not found; nothing to clean up.')
