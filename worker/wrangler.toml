@@ -14,12 +14,6 @@ binding = "UPTIMEFLARE_D1"
 database_name = "uptimeflare_d1"
 database_id = "00000000-0000-0000-0000-000000000000"
 
-# Optional: only used once by the migrator to copy credentials from KV to D1.
-# The deploy script omits this binding when the namespace does not exist.
-[[kv_namespaces]]
-binding = "UPTIMEFLARE_CONFIG"
-id = "00000000000000000000000000000000"
-
 [[durable_objects.bindings]]
 name = "MONITOR_SCHEDULER_DO"
 class_name = "MonitorScheduler"

@@ -4,9 +4,6 @@ import { schedulerMonitors } from './schedulerClient'
 
 export type RuntimeEnv = RuntimeBindings & Record<string, unknown>
 
-// Legacy one-time monitor list (pre-DO era). Read only as a migration source;
-// the scheduler deletes this row once its own storage list is authoritative.
-export const STORED_MONITORS_KEY = 'runtime_monitors'
 const STORE_TABLE = 'uptimeflare'
 const MONITORS_CACHE_TTL_MS = 60_000
 
@@ -61,13 +58,9 @@ export async function getStoredMonitors(
     return monitors.slice()
   }
 
-  // Fallback used by local dev (no DO binding) and by the scheduler itself
-  // during one-time migration: read the legacy D1 monitor list.
-  const value = await getRuntimeValue(env, STORED_MONITORS_KEY)
-  if (value === null) return []
-  const monitors = JSON.parse(value) as MonitorTarget[]
-  if (!Array.isArray(monitors)) throw new Error('Invalid stored monitors')
-  return monitors
+  // No DO binding (e.g. a Pages deployment without the binding): there is no
+  // page-managed monitor list to read.
+  return []
 }
 
 export async function getEffectiveWorkerConfig(

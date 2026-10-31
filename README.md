@@ -33,7 +33,6 @@
 | `state:lat:<id>` | 延迟（hex 压缩，保留 12h）、最近状态、`startedAt`、通知标记 | 每轮 |
 | `state:inc:<id>` | 事件（柱状压缩，保留 90 天） | 仅事件变化时 |
 | `admin_credentials` | 管理员凭证 | 变更时 |
-| `runtime_monitors` | 旧版监控列表（迁移源），调度器首次读取后自动删除 | 迁移读一次 |
 
 每轮检查 = 一次 `db.batch()`，其中每条写入都带 CAS（`WHERE value = 旧值`），
 批量原子生效；写失败或竞争则整轮不落盘、也不发通知（下一轮重新判定）。
@@ -113,22 +112,13 @@ npx tsc --noEmit
 - `CLOUDFLARE_ACCOUNT_ID`（可选，缺省时自动通过 API 获取）
 
 流程：`npm ci` → worker 测试 → worker dry-run 构建 → next-on-pages 构建 →
-确保 D1/表存在 → 生成 `wrangler.deploy.toml`（注入真实 D1 ID，KV 仅在旧命名空间
-还存在时保留供迁移用）→ 部署 Worker → 配置 Pages 绑定（替代 Terraform）→
-部署 Pages → `/health` 冒烟检查（同时上弦）。
+确保 D1/表存在 → 生成 `wrangler.deploy.toml`（注入真实 D1 ID）→ 部署 Worker →
+配置 Pages 绑定 → 部署 Pages → `/health` 冒烟检查（同时上弦）。
 
-### 从旧版迁移
+### 全新账号部署
 
-首次部署新版 Worker 后，第一次 `/health` 或 cron 触发会自动执行
-`worker/src/migrate.ts`：把旧的单行 `state` 拆成行式存储（进行中的事件标记为
-"已通知"，避免迁移后重复告警），并把仍只存在于 KV 的管理员凭证复制进 D1。
-
-整个迁移在**同一个原子批次**内完成，且随批删除旧 `state` 行——迁移要么完整
-成功（新数据可用、旧行消失），要么完全不动（旧数据原样保留，下轮重试），
-不存在中间态。旧监控列表行 `runtime_monitors` 在调度器首次读取监控列表
-（确认 DO storage 已成为权威数据源）后自动删除，删除失败会自动重试。CI 末尾
-的清理步骤会在健康检查确认迁移完成后，自动删除不再需要的旧 KV 命名空间
-`uptimeflare_config`（守卫条件不满足时跳过，下次部署重试）。
+不需要任何迁移步骤：第一轮检查会自动创建 `state:meta` 等行，访问一次
+`/health`（CI 末步会自动做）即完成上弦。
 
 ## 与旧版的主要差异
 

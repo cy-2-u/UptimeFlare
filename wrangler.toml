@@ -12,8 +12,8 @@ binding = "UPTIMEFLARE_D1"
 database_name = "uptimeflare_d1"
 database_id = "00000000-0000-0000-0000-000000000000"
 
-# 跨脚本 Durable Object 绑定仅在本地模拟；页面添加的监控本地走
-# D1 `runtime_monitors` 回退路径。
+# 跨脚本 Durable Object 绑定仅在本地模拟；本地 dev 没有线上 DO 数据，
+# 页面添加的监控列表在本地显示为空属正常现象。
 [[durable_objects.bindings]]
 name = "MONITOR_SCHEDULER_DO"
 class_name = "MonitorScheduler"

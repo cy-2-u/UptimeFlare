@@ -1,18 +1,13 @@
 import type { MonitorTarget } from '../../types/config'
 import { workerConfig } from '../../uptime.config'
 import { META_KEY, incidentKey, latencyKey } from '../../lib/state-format'
-import {
-  getStoredMonitors,
-  STORED_MONITORS_KEY,
-  type RuntimeEnv,
-} from '../../util/runtimeConfig'
+import type { RuntimeEnv } from '../../util/runtimeConfig'
 import { SchedulerError } from '../../util/schedulerClient'
 import { RunCoordinator } from './coordinator'
 import { deleteRows, readValue } from './store'
 
 const CHECK_INTERVAL_MS = 10 * 60 * 1000
 const STALE_AFTER_SEC = 25 * 60
-const LEGACY_MONITORS_CLEANED = 'legacy_monitors_row_deleted'
 
 // The minimal storage surface the scheduler needs; DurableObjectStorage
 // satisfies it structurally (and tests provide an in-memory fake).
@@ -77,30 +72,9 @@ export class SchedulerState {
   }
 
   private async readMonitors(): Promise<MonitorTarget[]> {
+    // DO storage is the single source of truth for page-managed monitors.
     const stored = await this.storage.get<MonitorTarget[]>('monitors')
-    if (stored !== undefined) {
-      await this.cleanupLegacyMonitorsRow()
-      return stored
-    }
-    // One-time migration of the legacy D1 monitor list; later reads use the DO.
-    const monitors = await getStoredMonitors({ ...this.env, MONITOR_SCHEDULER_DO: undefined })
-    await this.storage.put('monitors', monitors)
-    await this.cleanupLegacyMonitorsRow()
-    return monitors
-  }
-
-  // The D1 `runtime_monitors` row is dead weight once the DO storage list is
-  // authoritative. Delete it exactly once: a DO flag prevents repeats, and a
-  // failed delete retries on later reads.
-  private async cleanupLegacyMonitorsRow(): Promise<void> {
-    try {
-      if (await this.storage.get<boolean>(LEGACY_MONITORS_CLEANED)) return
-      await deleteRows(this.env, [STORED_MONITORS_KEY])
-      await this.storage.put(LEGACY_MONITORS_CLEANED, true)
-      console.log('Legacy runtime_monitors row removed.')
-    } catch (error) {
-      console.log('Legacy monitor row cleanup deferred: ' + error)
-    }
+    return stored ?? []
   }
 
   addMonitor(monitor: MonitorTarget): Promise<MonitorTarget[]> {

@@ -61,7 +61,6 @@ export type Notification = {
 
 export type RuntimeBindings = {
   UPTIMEFLARE_D1?: D1Database
-  UPTIMEFLARE_CONFIG?: KVNamespace
   MONITOR_SCHEDULER_DO?: DurableObjectNamespace<MonitorScheduler>
 }
 

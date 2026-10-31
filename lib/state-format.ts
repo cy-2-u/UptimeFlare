@@ -11,10 +11,8 @@ import type {
 //   state:inc:<id>      -> IncidentRow   (columnar incidents, written on change)
 //   state:lat:<id>      -> LatencyRow    (per-monitor latency + last status)
 //   admin_credentials   -> auth credentials JSON (see util/auth.ts)
-//   state               -> legacy single-row state, only read by the migrator
 // ---------------------------------------------------------------------------
 
-export const LEGACY_STATE_KEY = 'state'
 export const META_KEY = 'state:meta'
 export const incidentKey = (monitorId: string) => `state:inc:${monitorId}`
 export const latencyKey = (monitorId: string) => `state:lat:${monitorId}`

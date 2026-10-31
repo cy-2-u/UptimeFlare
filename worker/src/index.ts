@@ -11,7 +11,6 @@ import {
 import { getEffectiveWorkerConfig, type RuntimeEnv } from '../../util/runtimeConfig'
 import { SchedulerError } from '../../util/schedulerClient'
 import { checkMonitor } from './checks'
-import { migrateIfNeeded } from './migrate'
 import { dispatchNotices } from './notify'
 import { SchedulerState } from './scheduler'
 import {
@@ -141,13 +140,6 @@ const Worker = {
       return jsonResponse({ healthy: false, error: 'not found' }, { status: 404 })
     }
 
-    let migrated = false
-    try {
-      migrated = await migrateIfNeeded(env)
-    } catch (err) {
-      console.log('Migration failed: ' + err)
-    }
-
     let nextAlarm: number | null = null
     try {
       nextAlarm = (await getScheduler(env).ensureAlarm()).nextAlarm
@@ -182,7 +174,6 @@ const Worker = {
         nextAlarm,
         nextAlarmInSec: nextAlarm ? Math.max(0, Math.round((nextAlarm - nowMs) / 1000)) : null,
         monitorCount,
-        migrated: migrated || undefined,
         serverTime: nowSec,
       },
       { headers: { 'cache-control': 'no-store' } }
@@ -190,13 +181,8 @@ const Worker = {
   },
 
   async scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext): Promise<void> {
-    // Cron is a supervisor only: migrate if needed, then make sure the DO
-    // alarm is armed (and force-re-arm if rounds went stale).
-    try {
-      await migrateIfNeeded(env)
-    } catch (err) {
-      console.log('Migration failed in cron: ' + err)
-    }
+    // Cron is a supervisor only: make sure the DO alarm is armed (and
+    // force-re-arm if rounds went stale).
     try {
       const result = await getScheduler(env).healIfStale()
       if (result.healed) console.log('Cron healed the monitor scheduler alarm.')

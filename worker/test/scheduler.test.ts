@@ -14,50 +14,6 @@ function fixture(db?: FakeD1) {
   return { storage, env, db: d1 }
 }
 
-test('readMonitors migrates the legacy D1 monitor list and removes the row', async () => {
-  const { storage, env, db } = fixture()
-  db.rows.set('runtime_monitors', JSON.stringify([monitor]))
-
-  const scheduler = new SchedulerState(storage, env, async () => {})
-  assert.deepEqual(await scheduler.listMonitors(), [monitor])
-  // The legacy row was consumed by the migration and deleted in the same read.
-  assert.equal(db.rows.get('runtime_monitors'), undefined)
-  assert.equal(await storage.get('legacy_monitors_row_deleted'), true)
-  // Subsequent reads come from DO storage and stay intact.
-  assert.deepEqual(await scheduler.listMonitors(), [monitor])
-})
-
-test('legacy monitor row cleanup runs at most once', async () => {
-  const { storage, env, db } = fixture()
-  const scheduler = new SchedulerState(storage, env, async () => {})
-
-  // First read sets the one-time flag (row absent, delete is a no-op).
-  await scheduler.addMonitor(monitor)
-  assert.equal(await storage.get('legacy_monitors_row_deleted'), true)
-
-  // Anything re-seeding the legacy row afterwards stays untouched.
-  db.rows.set('runtime_monitors', JSON.stringify([monitor]))
-  await scheduler.listMonitors()
-  assert.notEqual(db.rows.get('runtime_monitors'), undefined)
-})
-
-test('a failed legacy-row delete retries on the next read', async () => {
-  const { storage, env, db } = fixture()
-  db.rows.set('runtime_monitors', JSON.stringify([monitor]))
-  db.failWrites = true
-
-  const scheduler = new SchedulerState(storage, env, async () => {})
-  // Migration read still succeeds and the flag is NOT set (deferred cleanup).
-  assert.deepEqual(await scheduler.listMonitors(), [monitor])
-  assert.equal(await storage.get('legacy_monitors_row_deleted'), undefined)
-  assert.notEqual(db.rows.get('runtime_monitors'), undefined)
-
-  db.failWrites = false
-  await scheduler.listMonitors()
-  assert.equal(db.rows.get('runtime_monitors'), undefined)
-  assert.equal(await storage.get('legacy_monitors_row_deleted'), true)
-})
-
 test('overlapping manual and alarm requests share one run and rearm', async () => {
   const { storage, env } = fixture()
   let calls = 0
