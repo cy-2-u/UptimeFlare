@@ -6,7 +6,8 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
-const workerDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
+const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
+const workerDir = path.join(root, 'worker')
 
 const databaseId = process.env.D1_ID?.trim() ?? ''
 if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(databaseId)) {
