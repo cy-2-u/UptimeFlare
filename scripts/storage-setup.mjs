@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
-const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
+const scriptsDir = path.dirname(fileURLToPath(import.meta.url))
 const API = 'https://api.cloudflare.com/client/v4'
 const DATABASE_NAME = 'uptimeflare_d1'
 
@@ -43,7 +43,6 @@ async function appendGithubEnv(pairs) {
   const { appendFile } = await import('node:fs/promises')
   await appendFile(githubEnv, `\n${content}\n`)
 }
-
 const accountId = await resolveAccountId()
 
 // Create the database (404/7502 = already exists).
@@ -66,7 +65,7 @@ const { result: databases } = await api(`/accounts/${accountId}/d1/database?per_
 const database = databases.find((db) => db.name === DATABASE_NAME)
 if (!database) throw new Error('D1 database not found after creation')
 
-const initSql = await readFile(path.join(root, 'init.sql'), 'utf8')
+const initSql = await readFile(path.join(scriptsDir, 'init.sql'), 'utf8')
 await api(`/accounts/${accountId}/d1/database/${database.uuid}/query`, {
   method: 'POST',
   body: JSON.stringify({ sql: initSql, params: [] }),

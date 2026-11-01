@@ -1,8 +1,6 @@
 import type { NextRequest } from 'next/server'
-import { latencyKey } from '@/lib/state-format'
-import type { RuntimeEnv } from '@/util/runtimeConfig'
-import { getRuntimeValue } from '@/util/runtimeConfig'
-import type { LatencyRow } from '@/lib/state-format'
+import { latencyKey, type LatencyRow } from '@/lib/state-format'
+import { getRuntimeValue, type RuntimeEnv } from '@/util/runtimeConfig'
 
 export const runtime = 'edge'
 

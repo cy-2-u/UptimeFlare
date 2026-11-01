@@ -4,7 +4,6 @@ const pageConfig: PageConfig = {
   title: '服务状态',
   links: [],
   favicon: '/favicon.svg',
-  logo: '/logo.png',
   group: {
     核心服务: [],
   },

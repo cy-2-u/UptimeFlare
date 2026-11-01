@@ -13,10 +13,6 @@ export type PageConfig = {
   links?: PageConfigLink[]
   group?: PageConfigGroup
   favicon?: string
-  logo?: string
-  maintenances?: {
-    upcomingColor?: string
-  }
   customFooter?: string
 }
 
@@ -47,7 +43,7 @@ export type MonitorTarget = {
   responseForbiddenKeyword?: string
 }
 
-export type WorkerConfig<TEnv = unknown> = {
+export type WorkerConfig = {
   monitors: MonitorTarget[]
   notification?: Notification
 }

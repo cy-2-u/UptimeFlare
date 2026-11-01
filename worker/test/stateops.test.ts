@@ -219,6 +219,9 @@ test('gracePeriod delays the first DOWN notification and sends it exactly once',
   )
   assert.equal(third.notices.length, 1)
   assert.equal(state.lat.get(monitor.id)!.downNotifiedAt, T0 + 360)
+  // Waiting rounds only loaded the incident row; the unchanged row is not
+  // written back.
+  assert.equal(third.incChanged.has(monitor.id), false)
 
   // Subsequent rounds stay quiet.
   const fourth = runRound(

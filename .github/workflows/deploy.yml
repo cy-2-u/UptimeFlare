@@ -5,6 +5,12 @@ on:
     branches: ['main']
   workflow_dispatch:
 
+# Never run two deploys concurrently: overlapping wrangler/API mutations
+# would race on bindings and deployments.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest

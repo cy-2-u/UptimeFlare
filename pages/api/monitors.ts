@@ -1,5 +1,4 @@
 import type { NextRequest } from 'next/server'
-import type { MonitorTarget } from '@/types/config'
 import { workerConfig } from '@/uptime.config'
 import {
   clearMonitorsCache,
@@ -81,5 +80,3 @@ export default async function handler(req: NextRequest): Promise<Response> {
     )
   }
 }
-
-export type { MonitorTarget }

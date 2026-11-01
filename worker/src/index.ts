@@ -30,7 +30,6 @@ export interface Env extends RuntimeEnv {
 }
 
 const MONITOR_CHECK_CONCURRENCY = 4
-const CHECK_INTERVAL_MS = 10 * 60 * 1000
 
 function getScheduler(env: Env) {
   const namespace = env.MONITOR_SCHEDULER_DO

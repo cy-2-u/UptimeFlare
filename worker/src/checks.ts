@@ -4,6 +4,10 @@ import { fetchTimeout, withTimeout } from './util'
 
 const DEFAULT_MONITOR_TIMEOUT_MS = 4500
 
+// Error strings land in incidents, notifications and the public status page;
+// cap them so a chatty exception (TLS/DNS dumps) cannot bloat stored state.
+const MAX_ERROR_LENGTH = 300
+
 // A single failed check must be confirmed before it opens an incident,
 // so a one-off network blip does not page the user.
 const FAILURE_CONFIRMATION_ATTEMPTS = 2
@@ -89,7 +93,7 @@ export async function getStatus(
         status.ping = monitor.timeout || DEFAULT_MONITOR_TIMEOUT_MS
       }
       status.up = false
-      status.err = e.name + ': ' + e.message
+      status.err = (e.name + ': ' + e.message).slice(0, MAX_ERROR_LENGTH)
     }
   } else {
     // HTTP endpoint monitor
@@ -134,7 +138,7 @@ export async function getStatus(
         status.err = `Timeout after ${status.ping}ms`
       } else {
         status.up = false
-        status.err = e.name + ': ' + e.message
+        status.err = (e.name + ': ' + e.message).slice(0, MAX_ERROR_LENGTH)
       }
     }
   }

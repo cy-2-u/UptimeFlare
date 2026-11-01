@@ -25,6 +25,30 @@
 └──────────────────────────────────────────────────────────────┘
 ```
 
+## 项目结构
+
+```
+├─ worker/src/       监测核心
+│  ├─ index.ts       Worker 入口：/health、/trigger、cron、MonitorScheduler DO
+│  ├─ scheduler.ts   调度状态机：闹钟、监控 CRUD、两阶段删除
+│  ├─ stateops.ts    一轮检查的纯转换逻辑（全部业务规则在这里）
+│  ├─ checks.ts      HTTP / TCP_PING 检查与失败确认
+│  ├─ store.ts       D1 行读写、批量 CAS 原子提交
+│  ├─ notify.ts      通知文案与派发（「通知区域」可改）
+│  └─ util.ts        colo 探测、超时工具
+├─ worker/test/      node:test 单元测试（fakes.ts 为 D1/DO 内存假件）
+├─ lib/state-format.ts  行式状态格式与编解码（Worker 与前端共用）
+├─ types/config.ts   全部类型
+├─ uptime.config.ts  用户配置：页面标题/分组/静态监控/通知/维护窗口
+├─ util/             双端共用：auth(HMAC 会话)、runtimeConfig(D1 读+DO 监控)、
+│                    schedulerClient(DO 客户端)、monitorValidate、stateReader
+├─ components/       纯 Tailwind 组件（ui.tsx 为基础件库）
+├─ pages/            Next.js 页面与 API 路由
+├─ scripts/          部署脚本（storage-setup → worker-config → wrangler →
+│                    pages-config → pages deploy → health-check）+ init.sql
+└─ .github/workflows/deploy.yml  push main 全自动部署
+```
+
 ### D1 行式存储（表 `uptimeflare`）
 
 | key | 内容 | 写入频率 |

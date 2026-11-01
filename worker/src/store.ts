@@ -24,7 +24,7 @@ export type RowChange = {
   next: string
 }
 
-export function requireD1(env: StoreEnv): D1Database {
+function requireD1(env: StoreEnv): D1Database {
   const db = env.UPTIMEFLARE_D1
   if (!db) throw new Error('UPTIMEFLARE_D1 binding is missing')
   return db
@@ -153,7 +153,7 @@ export async function deleteRows(env: StoreEnv, keys: string[]): Promise<void> {
 }
 
 // Parse helper for snapshot rows.
-export function parseRow<T>(snapshot: RowSnapshot | undefined | null): T | null {
+function parseRow<T>(snapshot: RowSnapshot | undefined | null): T | null {
   if (!snapshot || snapshot.value === null) return null
   return JSON.parse(snapshot.value) as T
 }
@@ -165,8 +165,6 @@ export function parseLatencyRow(snapshot: RowSnapshot | undefined | null): Laten
 export function parseIncidentRow(snapshot: RowSnapshot | undefined | null): IncidentRow | null {
   return parseRow<IncidentRow>(snapshot)
 }
-
-export { incidentKey, latencyKey, META_KEY }
 
 function chunked<T>(items: T[], size: number): T[][] {
   const chunks: T[][] = []

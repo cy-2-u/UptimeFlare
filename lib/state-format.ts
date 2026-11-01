@@ -54,7 +54,7 @@ export function bytesToHex(bytes: Uint8Array): string {
   return out
 }
 
-export function hexToBytes(hex: string): Uint8Array {
+export function hexToBytes(hex: string): Uint8Array<ArrayBuffer> {
   const bytes = new Uint8Array(hex.length / 2)
   for (let i = 0; i < bytes.length; i++) {
     bytes[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16)
@@ -93,11 +93,6 @@ export function appendLatencyPoint(
   } else {
     row.loc.c[row.loc.c.length - 1] += 1
   }
-}
-
-export function firstLatencyTime(row: LatencyRow): number {
-  if (!row.time) return 0
-  return new Uint32Array(hexToBytes(row.time.slice(0, 8)).buffer)[0]
 }
 
 export function lastLatencyPoint(row: LatencyRow): LatencyRecord | null {

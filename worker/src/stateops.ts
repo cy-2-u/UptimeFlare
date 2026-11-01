@@ -89,12 +89,10 @@ export function applyRound({
 
     const prevStatus = lat.lastStatus
     let inc: IncidentRow | null = null
-    let incTouched = false
+    let incMutated = false
+    // Load (never marks the row dirty by itself); mutations opt in below.
     const needInc = () => {
-      if (!inc) {
-        inc = incRows.get(id) ?? emptyIncidentRow()
-        incTouched = true
-      }
+      if (!inc) inc = incRows.get(id) ?? emptyIncidentRow()
       return inc
     }
 
@@ -108,6 +106,7 @@ export function applyRound({
           if (last.end === null) {
             last.end = checkedAt
             setIncidentRecord(row, incidentRowCount(row) - 1, last)
+            incMutated = true
             notices.push({
               monitor,
               isUp: true,
@@ -142,6 +141,7 @@ export function applyRound({
           } else {
             appendIncidentRecord(row, { start: [checkedAt], end: null, error: [status.err] })
           }
+          incMutated = true
           lat.lastErr = status.err
 
           if (!notification?.skipErrorChangeNotification && lat.downNotifiedAt !== null) {
@@ -180,6 +180,7 @@ export function applyRound({
         // Fresh incident (previous check was up or had no data yet).
         const row = needInc()
         appendIncidentRecord(row, { start: [checkedAt], end: null, error: [status.err] })
+        incMutated = true
         lat.lastStatus = 'down'
         lat.lastErr = status.err
 
@@ -199,9 +200,12 @@ export function applyRound({
       }
     }
 
-    if (incTouched && inc) {
-      pruneIncidents(inc, checkedAt - INCIDENT_RETENTION_SEC)
-      incChanged.set(id, inc)
+    // Only persist the incident row when it actually changed: a loaded-but-
+    // unmutated row (e.g. the grace-period wait) must not cause a no-op write
+    // every round. Pruning counts as a change.
+    if (inc) {
+      const pruned = pruneIncidents(inc, checkedAt - INCIDENT_RETENTION_SEC)
+      if (incMutated || pruned) incChanged.set(id, inc)
     }
     latChanged.set(id, lat)
   }

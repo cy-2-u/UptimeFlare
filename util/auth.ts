@@ -1,3 +1,4 @@
+import { bytesToHex, hexToBytes } from '../lib/state-format'
 import { getRuntimeValue, setRuntimeValue } from './runtimeConfig'
 import type { RuntimeEnv } from './runtimeConfig'
 
@@ -20,12 +21,6 @@ type SessionPayload = {
   exp: number
 }
 
-function bytesToHex(bytes: ArrayBuffer) {
-  return Array.from(new Uint8Array(bytes))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('')
-}
-
 function randomHex(length = 16) {
   const bytes = new Uint8Array(length)
   crypto.getRandomValues(bytes)
@@ -36,18 +31,38 @@ function randomHex(length = 16) {
 
 async function hashPassword(password: string, salt: string) {
   const data = new TextEncoder().encode(`${salt}:${password}`)
-  return bytesToHex(await crypto.subtle.digest('SHA-256', data))
+  return bytesToHex(new Uint8Array(await crypto.subtle.digest('SHA-256', data)))
 }
 
-async function hmacSign(secret: string, message: string) {
-  const key = await crypto.subtle.importKey(
+async function hmacKey(secret: string) {
+  return crypto.subtle.importKey(
     'raw',
     new TextEncoder().encode(secret),
     { name: 'HMAC', hash: 'SHA-256' },
     false,
-    ['sign']
+    ['sign', 'verify']
   )
-  return bytesToHex(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(message)))
+}
+
+async function hmacSign(secret: string, message: string) {
+  const signature = await crypto.subtle.sign(
+    'HMAC',
+    await hmacKey(secret),
+    new TextEncoder().encode(message)
+  )
+  return bytesToHex(new Uint8Array(signature))
+}
+
+// Constant-time signature verification via WebCrypto (never a string compare).
+async function hmacVerify(secret: string, message: string, signatureHex: string) {
+  const signature = hexToBytes(signatureHex)
+  if (signature.length !== 32) return false
+  return crypto.subtle.verify(
+    'HMAC',
+    await hmacKey(secret),
+    signature,
+    new TextEncoder().encode(message)
+  )
 }
 
 function b64urlEncode(value: string) {
@@ -150,7 +165,7 @@ export async function validateSession(env: RuntimeEnv, token?: string | null) {
   if (!credentials) return false
   if (credentials.username !== payload.u || credentials.passwordHash !== payload.ph) return false
 
-  return (await hmacSign(credentials.passwordHash, payloadStr)) === signature
+  return hmacVerify(credentials.passwordHash, payloadStr, signature)
 }
 
 export async function clearSession(_env: RuntimeEnv) {

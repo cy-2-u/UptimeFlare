@@ -67,8 +67,11 @@ export class SchedulerState {
     })
   }
 
+  // Pure read served without queueing behind a running check, so /health and
+  // the manage page stay fast even mid-round. Single-threaded DO semantics
+  // make the plain storage read safe.
   listMonitors(): Promise<MonitorTarget[]> {
-    return this.coordinator.mutate(() => this.readMonitors())
+    return this.readMonitors()
   }
 
   private async readMonitors(): Promise<MonitorTarget[]> {
