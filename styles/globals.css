@@ -12,11 +12,6 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-.glass-panel {
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid rgba(17, 24, 39, 0.08);
-}
-
 .brand-mark {
   display: grid;
   place-items: center;

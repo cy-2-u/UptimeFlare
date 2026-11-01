@@ -48,7 +48,7 @@ export default function AuthNav() {
           <button
             type="button"
             onClick={logout}
-            className="inline-flex h-9 items-center rounded-full bg-slate-950 px-4 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-800"
+            className="inline-flex h-9 items-center rounded-full border border-slate-200/80 bg-white/80 px-4 text-sm font-semibold text-slate-500 shadow-sm backdrop-blur transition hover:-translate-y-0.5 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
           >
             退出
           </button>

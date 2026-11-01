@@ -39,7 +39,7 @@ export function Button({
   return (
     <button
       {...props}
-      className={`inline-flex items-center justify-center gap-1.5 rounded-xl font-semibold transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 ${sizing} ${buttonVariants[variant]} ${className}`}
+      className={`inline-flex items-center justify-center gap-1.5 rounded-xl font-semibold transition-all duration-200 focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 ${sizing} ${buttonVariants[variant]} ${className}`}
     />
   )
 }
@@ -285,7 +285,7 @@ export function Dropdown({
         aria-expanded={open}
         aria-label={ariaLabel}
         onClick={() => (open ? setOpen(false) : openMenu())}
-        className={`flex h-11 w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-4 pr-12 text-sm text-slate-800 outline-none transition hover:border-slate-300 focus:border-slate-400 ${triggerClassName}`}
+        className={`flex h-11 w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-4 pr-12 text-sm text-slate-800 outline-none transition hover:border-slate-300 focus:border-slate-400 focus-visible:ring-2 focus-visible:ring-slate-300 ${triggerClassName}`}
       >
         <span className={`truncate ${selected ? '' : 'text-slate-400'}`}>
           {selected?.label ?? placeholder}
@@ -358,7 +358,7 @@ export function Input({ className = '', ...props }: InputHTMLAttributes<HTMLInpu
   return (
     <input
       {...props}
-      className={`w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:bg-white ${className}`}
+      className={`w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus-visible:ring-2 focus-visible:ring-slate-300 focus:bg-white ${className}`}
     />
   )
 }

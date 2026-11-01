@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 // Ensure the Pages project exists and configure its bindings. This replaces
 // Terraform entirely: one idempotent API call, no state files, no import run.
-import { fileURLToPath } from 'node:url'
 
 const API = 'https://api.cloudflare.com/client/v4'
 const PROJECT_NAME = 'uptimeflare'

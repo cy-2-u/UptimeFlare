@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Ensure the D1 database and table exist, then export D1_ID for later steps.
 // Replaces the old Python init scripts — the runtime only needs Node.
-import { readFile } from 'node:fs/promises'
+import { appendFile, readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
@@ -40,7 +40,6 @@ async function appendGithubEnv(pairs) {
   const content = Object.entries(pairs)
     .map(([key, value]) => `${key}=${value}`)
     .join('\n')
-  const { appendFile } = await import('node:fs/promises')
   await appendFile(githubEnv, `\n${content}\n`)
 }
 const accountId = await resolveAccountId()
