@@ -171,9 +171,12 @@ export default function MonitorManager() {
   }
 
   return (
+    // relative z-10: the section has backdrop-blur (a stacking context), so
+    // its open dropdown popups would otherwise paint below later page content
+    // such as the footer.
     <section
       id="monitor-manager"
-      className="mt-10 w-full rounded-[1.75rem] border border-slate-200/80 bg-white/85 p-5 shadow-[0_20px_60px_rgba(15,23,42,0.08)] backdrop-blur sm:p-6"
+      className="relative z-10 mt-10 w-full rounded-[1.75rem] border border-slate-200/80 bg-white/85 p-5 shadow-[0_20px_60px_rgba(15,23,42,0.08)] backdrop-blur sm:p-6"
     >
       <div className="grid gap-8 lg:grid-cols-[0.95fr_1.05fr]">
         <div>

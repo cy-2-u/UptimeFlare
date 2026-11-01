@@ -195,6 +195,10 @@ export type DropdownOption = { value: string; label: string }
 // as the rest of the UI, chevron tucked inside (right-4), keyboard navigation
 // (arrows/Enter/Escape), outside-click close, and flips up when the viewport
 // bottom is too close.
+// NOTE: the popup's z-40 only applies inside the nearest stacking context.
+// If the host card sits among later siblings that create their own stacking
+// context (backdrop-blur/transform), lift the host itself (relative z-10) —
+// see IncidentsDrawer / MonitorManager for the pattern.
 export function Dropdown({
   value,
   onChange,

@@ -181,7 +181,10 @@ export default function IncidentsDrawer({
       wide
     >
       <div className="space-y-5">
-        <div className="rounded-2xl border border-white/70 bg-white/80 p-4 shadow-sm backdrop-blur">
+        {/* relative z-10 lifts this card (and the dropdown popup inside it)
+            above the following siblings: backdrop-blur siblings paint later in
+            DOM order and would otherwise cover the open menu. */}
+        <div className="relative z-10 rounded-2xl border border-white/70 bg-white/80 p-4 shadow-sm backdrop-blur">
           <Dropdown
             ariaLabel="按站点筛选"
             value={selectedMonitor}
