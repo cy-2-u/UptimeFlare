@@ -6,7 +6,8 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
-const rootDir = path.dirname(fileURLToPath(import.meta.url))
+// wrangler.toml lives at the repo root; this script lives in scripts/.
+const rootDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 
 const databaseId = process.env.D1_ID?.trim() ?? ''
 if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(databaseId)) {
