@@ -1,20 +1,39 @@
-name = "uptimeflare"
+name = "uptimeflare_worker"
+main = "src/index.tsx"
 compatibility_date = "2025-04-02"
 compatibility_flags = [ "nodejs_compat" ]
 
-# 本地 `npm run preview`（wrangler pages dev）的绑定来源。
-# 注意：本文件刻意不包含 pages_build_output_dir —— 否则 CI 的
-# `wrangler pages deploy` 会把它当作部署配置，把占位 ID 当真实绑定上传。
-# 生产绑定的唯一来源是 scripts/pages-config.mjs（Cloudflare API）。
-# 占位 database_id 仅用于本地模拟器，本地 D1 不校验真实 UUID。
+# Static assets are served before the Worker runs and do not count against
+# the free plan request quota. Unmatched paths fall through to the Worker.
+[assets]
+directory = "./assets"
+
+[triggers]
+# Cron is only a supervisor: it re-arms the Durable Object alarm when it went
+# missing and force-re-arms when rounds went stale. The real cadence lives in
+# the MonitorScheduler alarm.
+crons = [ "0 * * * *" ]
+
 [[d1_databases]]
 binding = "UPTIMEFLARE_D1"
 database_name = "uptimeflare_d1"
 database_id = "00000000-0000-0000-0000-000000000000"
 
-# 跨脚本 Durable Object 绑定仅在本地模拟；本地 dev 没有线上 DO 数据，
-# 页面添加的监控列表在本地显示为空属正常现象。
 [[durable_objects.bindings]]
 name = "MONITOR_SCHEDULER_DO"
 class_name = "MonitorScheduler"
-script_name = "uptimeflare_worker"
+
+# Migration ledger must stay identical to what production already applied
+# (v1 RemoteChecker, v2 MonitorScheduler, v3 RemoteChecker removal) so the
+# Durable Object namespace — and its stored monitor list — carries over.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RemoteChecker"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["MonitorScheduler"]
+
+[[migrations]]
+tag = "v3"
+deleted_classes = ["RemoteChecker"]

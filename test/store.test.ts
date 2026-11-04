@@ -1,0 +1,131 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import {
+  META_KEY,
+  incidentKey,
+  latencyKey,
+  appendLatencyPoint,
+  assembleCompactedState,
+  uncompact,
+  emptyMeta,
+  emptyLatencyRow,
+} from '../src/state-format'
+import {
+  changeFrom,
+  commitChanges,
+  deleteRows,
+  readLatencySnapshot,
+  readStateSnapshot,
+  readValue,
+  setRuntimeValue,
+} from '../src/store'
+import { FakeD1 } from './fakes'
+
+function fixture() {
+  const db = new FakeD1()
+  return { env: { UPTIMEFLARE_D1: db } as unknown as Record<string, unknown>, db }
+}
+
+test('readValue requires the D1 binding', async () => {
+  await assert.rejects(readValue({}, 'any'), /binding/)
+})
+
+test('setRuntimeValue creates the table and upserts', async () => {
+  const { env, db } = fixture()
+  await setRuntimeValue(env, 'k', 'v1')
+  await setRuntimeValue(env, 'k', 'v2')
+  assert.equal(await readValue(env, 'k'), 'v2')
+  assert.equal(db.rows.get('k'), 'v2')
+})
+
+test('commitChanges writes fresh rows atomically and verifies them', async () => {
+  const { env, db } = fixture()
+  await commitChanges(env, [{ key: META_KEY, expected: null, next: '{"a":1}' }])
+  assert.equal(db.rows.get(META_KEY), '{"a":1}')
+})
+
+test('compare-and-set rejects stale expectations without touching data', async () => {
+  const { env, db } = fixture()
+  db.rows.set(META_KEY, 'original')
+
+  await assert.rejects(
+    commitChanges(env, [{ key: META_KEY, expected: 'tampered', next: 'next' }]),
+    /Concurrent state update/
+  )
+  assert.equal(db.rows.get(META_KEY), 'original')
+
+  await commitChanges(env, [{ key: META_KEY, expected: 'original', next: 'updated' }])
+  assert.equal(db.rows.get(META_KEY), 'updated')
+})
+
+test('batch commits are atomic: a failed write leaves every row untouched', async () => {
+  const { env, db } = fixture()
+  db.rows.set(META_KEY, 'original')
+  db.failWrites = true
+
+  await assert.rejects(
+    commitChanges(env, [
+      { key: META_KEY, expected: 'original', next: 'updated' },
+      { key: latencyKey('m'), expected: null, next: '{}' },
+    ]),
+    /write unavailable/
+  )
+  assert.equal(db.rows.get(META_KEY), 'original')
+  assert.equal(db.rows.has(latencyKey('m')), false)
+})
+
+test('readStateSnapshot groups meta, latency and incident rows', async () => {
+  const { env, db } = fixture()
+  db.rows.set(META_KEY, '{"lastUpdate":1}')
+  db.rows.set(latencyKey('a'), '{"lastStatus":"up"}')
+  db.rows.set(incidentKey('a'), '{"start":[]}')
+  db.rows.set('admin_credentials', 'secret')
+
+  const snapshot = await readStateSnapshot(env)
+  assert.equal(snapshot.meta.value, '{"lastUpdate":1}')
+  assert.equal(snapshot.lat.get('a')?.value, '{"lastStatus":"up"}')
+  assert.equal(snapshot.inc.get('a')?.value, '{"start":[]}')
+  assert.equal(snapshot.lat.has('admin_credentials'), false)
+})
+
+test('deleteRows removes exactly the requested keys', async () => {
+  const { env, db } = fixture()
+  db.rows.set(latencyKey('a'), '{}')
+  db.rows.set(incidentKey('a'), '{}')
+  db.rows.set(latencyKey('b'), '{}')
+
+  await deleteRows(env, [latencyKey('a'), incidentKey('a')])
+
+  assert.equal(db.rows.has(latencyKey('a')), false)
+  assert.equal(db.rows.has(latencyKey('b')), true)
+})
+
+test('assemble + uncompact round-trip preserves incidents and latency', () => {
+  const meta = { lastUpdate: T0, overallUp: 1, overallDown: 0 }
+  const latRow = emptyLatencyRow(100)
+  const incident = { start: [[100]], end: [200], error: [['blip']] }
+
+  appendLatencyPoint(latRow, { time: 100, ping: 42, loc: 'HKG' })
+
+  const compacted = JSON.parse(
+    assembleCompactedState(meta, { a: incident }, { a: latRow })
+  )
+  const state = uncompact(compacted)
+
+  assert.equal(state.lastUpdate, T0)
+  assert.equal(state.startedAt?.a, 100)
+  assert.equal(state.incident.a[0].start[0], 100)
+  assert.equal(state.incident.a[0].end, 200)
+  assert.equal(state.latency.a[0].ping, 42)
+  assert.equal(state.latency.a[0].loc, 'HKG')
+})
+
+test('assemble skips empty rows and drops empty startedAt', () => {
+  const compacted = JSON.parse(
+    assembleCompactedState(emptyMeta(), { a: { start: [], end: [], error: [] } }, {})
+  )
+  assert.equal(Object.keys(compacted.incident).length, 0)
+  assert.equal(compacted.startedAt, undefined)
+})
+
+const T0 = 1_700_000_000

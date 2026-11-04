@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 // Ensure the D1 database and table exist, then export D1_ID for later steps.
-// Replaces the old Python init scripts — the runtime only needs Node.
 import { appendFile, readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
@@ -42,9 +41,10 @@ async function appendGithubEnv(pairs) {
     .join('\n')
   await appendFile(githubEnv, `\n${content}\n`)
 }
+
 const accountId = await resolveAccountId()
 
-// Create the database (404/7502 = already exists).
+// Create the database (error 7502 = already exists).
 const create = await fetch(`${API}/accounts/${accountId}/d1/database`, {
   method: 'POST',
   headers: {
@@ -57,8 +57,7 @@ const createBody = await create.json()
 if (!createBody.success && createBody.errors?.[0]?.code !== 7502) {
   throw new Error(`D1 create failed: ${JSON.stringify(createBody.errors)}`)
 }
-if (createBody.success) console.log('D1 database created.')
-else console.log('D1 database already exists.')
+console.log(createBody.success ? 'D1 database created.' : 'D1 database already exists.')
 
 const { result: databases } = await api(`/accounts/${accountId}/d1/database?per_page=1000`)
 const database = databases.find((db) => db.name === DATABASE_NAME)

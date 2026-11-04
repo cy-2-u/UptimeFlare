@@ -1,33 +1,18 @@
 # dependencies
 node_modules/
 
-# next.js
-/.next/
-/out/
-next-env.d.ts
+# build artifacts
+dist/
+wrangler.deploy.toml
+.next/
 
-# production
-/build
+# wrangler local state
+.wrangler/
+
+# generated types
+next-env.d.ts
+worker-configuration.d.ts
 
 # misc
 .DS_Store
-*.pem
-*.tsbuildinfo
-
-# debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# env files
-.env*.local
-.env
-
-# vercel / cloudflare
-.vercel
-.wrangler/
-
-# deploy artifacts
-worker/dist/
-worker/wrangler.deploy.json
-worker/wrangler.deploy.toml
+*.log
