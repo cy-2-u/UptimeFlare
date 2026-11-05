@@ -1,11 +1,11 @@
 import type { PageConfig } from '../types'
 
-// Shared page shell. Server renders structure and non-time text; time-aware
-// widgets are filled client-side from the embedded bootstrap JSON (correct
-// timezone without hydration).
+// Page shell. The nav is rendered server-side from the validated session
+// (see navIsAdmin in index.tsx) — no client swap, no flash, no extra fetch.
 export function Layout(props: {
   pageConfig: PageConfig
   title: string
+  isAdmin?: boolean
   children: unknown
 }) {
   return (
@@ -38,22 +38,29 @@ export function Layout(props: {
               <span>{props.pageConfig.title || '服务状态'}</span>
             </a>
             <nav class="topnav">
-              {/* Admin entry is resolved client-side (fetch /api/admin) so the
-                  status page stays publicly cacheable at the edge. */}
-              <a href="/manage" class="btn ghost hidden" data-when-admin>
-                站点管理
-              </a>
-              <button type="button" class="btn ghost danger-hover hidden" data-action="logout" data-when-admin>
-                退出
-              </button>
-              <a href="/login" class="btn primary" data-login>
-                登录
-              </a>
+              {props.isAdmin && (
+                <>
+                  <a href="/manage" class="btn ghost sm">
+                    站点管理
+                  </a>
+                  <button type="button" class="btn ghost sm danger-hover" data-action="logout">
+                    退出
+                  </button>
+                </>
+              )}
+              {!props.isAdmin && (
+                <a href="/login" class="btn primary sm">
+                  登录
+                </a>
+              )}
             </nav>
           </header>
+
           <div class="orb orb-a" aria-hidden="true" />
           <div class="orb orb-b" aria-hidden="true" />
+
           <main>{props.children}</main>
+
           <footer class="footer">
             <p>
               &copy; {new Date().getFullYear()} {props.pageConfig.title || '服务状态'} · 持续监测
@@ -65,7 +72,10 @@ export function Layout(props: {
                 </a>
               ))}
               {props.pageConfig.customFooter && (
-                <div class="custom-footer" dangerouslySetInnerHTML={{ __html: props.pageConfig.customFooter }} />
+                <div
+                  class="custom-footer"
+                  dangerouslySetInnerHTML={{ __html: props.pageConfig.customFooter }}
+                />
               )}
             </div>
           </footer>

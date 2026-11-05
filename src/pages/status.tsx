@@ -6,9 +6,21 @@ export type StatusBootstrap = {
   overallDown: number
   monitors: MonitorTarget[]
   incident: Record<string, IncidentRow>
-  latency: Record<string, { time: number; ping: number; loc: string }[]>
   startedAt?: Record<string, number>
+  lastPing: Record<string, number>
   maintenances: MaintenanceConfig[]
+}
+
+const STATUS_LABEL: Record<string, string> = {
+  up: '运行正常',
+  down: '宕机',
+  pending: '等待检查',
+}
+
+function statusOf(monitor: MonitorTarget, incident: Record<string, IncidentRow>) {
+  const incidents = incident[monitor.id]
+  if (!incidents || incidents.start.length === 0) return 'pending'
+  return incidents.end[incidents.end.length - 1] === null ? 'down' : 'up'
 }
 
 function hostnameOf(target: string) {
@@ -26,38 +38,18 @@ function groupIcon(group: string) {
   return '🗔'
 }
 
-// Status badge text/class from the server (timezone-free judgement). The
-// maintenance override is applied client-side from the bootstrap data.
-function statusOf(monitor: MonitorTarget, state: StatusPageProps['state']) {
-  const incidents = state.incident[monitor.id]
-  if (!incidents || incidents.start.length === 0) return 'pending'
-  return incidents.end[incidents.end.length - 1] === null ? 'down' : 'up'
-}
-
-type StatusPageProps = {
+export function StatusPage(props: {
   pageConfigTitle: string
   monitors: MonitorTarget[]
   state: {
     incident: Record<string, IncidentRow>
-    latency: Record<string, { time: number; ping: number; loc: string }[]>
     startedAt?: Record<string, number>
   }
   bootstrap: StatusBootstrap
-}
-
-const STATUS_LABEL: Record<string, string> = {
-  up: '运行正常',
-  down: '宕机',
-  pending: '等待检查',
-  maintenance: '维护中',
-}
-
-export function StatusPage(props: StatusPageProps) {
-  const { monitors, state, bootstrap } = props
+}) {
+  const { monitors, bootstrap } = props
   const total = bootstrap.overallUp + bootstrap.overallDown
 
-  // Server-painted overall banner (timezone-free), so there is no "loading"
-  // flash; the client runtime repaints the same strings on its tick.
   const overall =
     bootstrap.overallUp === 0 && bootstrap.overallDown === 0
       ? { tone: '', icon: '⏳', label: '暂无监测数据' }
@@ -72,8 +64,6 @@ export function StatusPage(props: StatusPageProps) {
             }
 
   const groups: { name: string; monitors: MonitorTarget[] }[] = []
-  const grouped = new Set<string>()
-  // Static config groups keep their order via the monitor.group field.
   for (const monitor of monitors) {
     const name = monitor.group || '核心服务'
     let bucket = groups.find((g) => g.name === name)
@@ -82,7 +72,6 @@ export function StatusPage(props: StatusPageProps) {
       groups.push(bucket)
     }
     bucket.monitors.push(monitor)
-    grouped.add(monitor.id)
   }
 
   return (
@@ -102,21 +91,22 @@ export function StatusPage(props: StatusPageProps) {
             <span data-overall-text>{overall.label}</span>
           </div>
           <div class="hero-actions">
-            <button type="button" class="btn ghost" data-open-incidents>
+            <button type="button" class="btn ghost sm" data-open-incidents>
               🕘 历史故障
             </button>
           </div>
         </div>
+
         <div class="hero-summary hero-enter">
           <div class="summary-head">
             <span>运行概况</span>
             <span class="emblem" data-overall-icon>
-              ⏳
+              {overall.icon}
             </span>
           </div>
           <div class="summary-grid">
             <div>
-              <div class="summary-num" data-overall-up>
+              <div class="summary-num ok" data-overall-up>
                 {bootstrap.overallUp}
               </div>
               <div class="summary-label">在线服务</div>
@@ -126,7 +116,9 @@ export function StatusPage(props: StatusPageProps) {
               <div class="summary-label">监测总数</div>
             </div>
           </div>
-          <div class="summary-foot">数据更新于 <span data-updated-at>—</span></div>
+          <div class="summary-foot">
+            数据更新于 <span data-updated-at>—</span>
+          </div>
         </div>
       </section>
 
@@ -139,34 +131,38 @@ export function StatusPage(props: StatusPageProps) {
             </div>
             <div class="cards">
               {group.monitors.map((monitor) => {
-                const status = statusOf(monitor, state)
+                const status = statusOf(monitor, props.state.incident)
                 const host = hostnameOf(monitor.target)
                 const preview =
                   monitor.preview ||
                   (/^https?:\/\//.test(monitor.target)
                     ? `https://image.thum.io/get/width/1200/${monitor.target}`
                     : '')
+                const lastPing = bootstrap.lastPing[monitor.id]
                 return (
                   <article class="card" data-monitor={monitor.id}>
                     <div class="card-preview">
                       <div class="card-chrome">
-                        <span /> <span /> <span />
+                        <span />
+                        <span />
+                        <span />
                         <span class="chrome-host">{host}</span>
                       </div>
                       <div class="card-shot">
                         {preview ? (
-                          <a href={monitor.statusPageLink || monitor.target} target="_blank" rel="noopener noreferrer">
+                          <a
+                            href={monitor.statusPageLink || monitor.target}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
                             <img src={preview} alt={monitor.name} loading="lazy" />
                           </a>
                         ) : (
                           <div class="shot-empty">☁</div>
                         )}
                       </div>
-                      <div class={`pill pill-${status}`} data-pill>
-                        <span class="dot" />
-                        <span data-pill-label>{STATUS_LABEL[status]}</span>
-                      </div>
                     </div>
+
                     <div class="card-head">
                       <div class="min-w-0">
                         <h3>{monitor.name}</h3>
@@ -174,6 +170,7 @@ export function StatusPage(props: StatusPageProps) {
                       </div>
                       <span class="badge">{monitor.group || '核心服务'}</span>
                     </div>
+
                     <div class="card-bars">
                       <div class="bars-meta">
                         <span>近 30 天</span>
@@ -183,12 +180,13 @@ export function StatusPage(props: StatusPageProps) {
                       </div>
                       <div class="bars" data-bars />
                     </div>
+
                     <div class="card-foot">
-                      <span class="dot" data-dot />
+                      <span class={`dot dot-${status}`} data-dot />
                       <span data-status-label>{STATUS_LABEL[status]}</span>
                       <span class="muted" data-ago />
                       <span class="latency" data-latency>
-                        -
+                        {lastPing ? `${lastPing}ms` : '—'}
                       </span>
                     </div>
                   </article>
@@ -207,7 +205,7 @@ export function StatusPage(props: StatusPageProps) {
           <div>
             <div class="dlg-sub" data-day-sub />
             <div class="dlg-title" data-day-title>
-              故障记录
+              当日故障
             </div>
           </div>
           <button type="button" class="dlg-close" aria-label="关闭">
@@ -234,7 +232,9 @@ export function StatusPage(props: StatusPageProps) {
       <script
         type="application/json"
         id="bootstrap"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(props.bootstrap).replace(/</g, '\\u003c') }}
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(props.bootstrap).replace(/</g, '\\u003c'),
+        }}
       />
     </>
   )

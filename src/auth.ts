@@ -180,6 +180,14 @@ export function getRequestCookie(request: Request): string | undefined {
   return request.headers.get('cookie') ?? undefined
 }
 
+// Cheap cookie-presence check for nav rendering: no session cookie means the
+// visitor is anonymous (zero D1 reads); a present cookie gets real validation
+// by the caller. Actual enforcement always happens server-side on /manage and
+// the admin APIs.
+export function hasSessionCookie(request: Request): boolean {
+  return Boolean(getCookieValue(request.headers.get('cookie') ?? undefined, SESSION_COOKIE))
+}
+
 export async function isAdminRequest(request: Request, env: RuntimeEnv) {
   return validateSession(env, getCookieValue(getRequestCookie(request), SESSION_COOKIE))
 }

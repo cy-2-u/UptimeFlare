@@ -22,6 +22,7 @@ import {
   createSession,
   expiredSessionCookie,
   hasAdmin,
+  hasSessionCookie,
   isAdminRequest,
   isHttpsRequest,
   sessionCookie,
@@ -416,13 +417,33 @@ app.delete('/api/monitors', async (c) => {
 
 // --- pages -------------------------------------------------------------------------
 
+// Server-side nav auth: anonymous visitors (no cookie) skip the D1 read
+// entirely; a present cookie gets real validation. Pages are rendered
+// per-request (private, no-store) so the nav is always truthful and never
+// flashes "登录" after a back-navigation.
+async function navIsAdmin(request: Request, env: Env['Bindings']): Promise<boolean> {
+  return hasSessionCookie(request) ? isAdminRequest(request, env) : false
+}
+
 app.get('/', async (c) => {
   const env = c.env
   const monitors = await getEffectiveMonitors(env)
   const { meta, state } = await readState(env)
 
+  // Cards only display the latest latency; the full 12h arrays (sparkline
+  // material) stay on the detail page, keeping this payload small.
+  const lastPing: Record<string, number> = {}
+  for (const monitor of monitors) {
+    const points = state.latency[monitor.id]
+    if (points?.length) lastPing[monitor.id] = points[points.length - 1].ping
+  }
+
   return c.html(
-    <Layout pageConfig={pageConfig} title={pageConfig.title ?? '服务状态'}>
+    <Layout
+      pageConfig={pageConfig}
+      title={pageConfig.title ?? '服务状态'}
+      isAdmin={await navIsAdmin(c.req.raw, env)}
+    >
       <StatusPage
         pageConfigTitle={pageConfig.title ?? '服务状态'}
         monitors={monitors}
@@ -433,14 +454,14 @@ app.get('/', async (c) => {
           overallDown: meta.overallDown,
           monitors: sanitizeMonitors(monitors),
           incident: state.incident,
-          latency: state.latency,
           startedAt: state.startedAt,
+          lastPing,
           maintenances,
         }}
       />
     </Layout>,
     200,
-    { 'cache-control': 'public, s-maxage=60, stale-while-revalidate=300' }
+    { 'cache-control': 'private, no-store' }
   )
 })
 
@@ -450,7 +471,7 @@ app.get('/m/:id', async (c) => {
   const monitor = monitors.find((item) => item.id === id)
   if (!monitor) {
     return c.html(
-      <Layout pageConfig={pageConfig} title="未找到监测项">
+      <Layout pageConfig={pageConfig} title="未找到监测项" isAdmin={await navIsAdmin(c.req.raw, c.env)}>
         <div class="detail-wrap">
           <a href="/" class="back">
             ← 返回状态页
@@ -473,20 +494,30 @@ app.get('/m/:id', async (c) => {
   }).replace(/</g, '\\u003c')
 
   return c.html(
-    <Layout pageConfig={pageConfig} title={`${monitor.name} - ${pageConfig.title ?? '服务状态'}`}>
+    <Layout
+      pageConfig={pageConfig}
+      title={`${monitor.name} - ${pageConfig.title ?? '服务状态'}`}
+      isAdmin={await navIsAdmin(c.req.raw, c.env)}
+    >
       <DetailPage monitor={monitor} state={state} bootstrap={bootstrap} />
     </Layout>,
     200,
-    { 'cache-control': 'public, s-maxage=60, stale-while-revalidate=300' }
+    { 'cache-control': 'private, no-store' }
   )
 })
 
 app.get('/login', async (c) => {
   const hasAdminAccount = await hasAdmin(c.env)
   return c.html(
-    <Layout pageConfig={pageConfig} title={hasAdminAccount ? '管理员登录' : '设置管理员'}>
+    <Layout
+      pageConfig={pageConfig}
+      title={hasAdminAccount ? '管理员登录' : '设置管理员'}
+      isAdmin={await navIsAdmin(c.req.raw, c.env)}
+    >
       <LoginPage hasAdmin={hasAdminAccount} />
-    </Layout>
+    </Layout>,
+    200,
+    { 'cache-control': 'private, no-store' }
   )
 })
 
@@ -496,7 +527,7 @@ app.get('/manage', async (c) => {
   }
   const monitors = await getStoredMonitors(c.env, { fresh: true })
   return c.html(
-    <Layout pageConfig={pageConfig} title="站点管理">
+    <Layout pageConfig={pageConfig} title="站点管理" isAdmin>
       <ManagePage monitors={monitors} />
     </Layout>,
     200,

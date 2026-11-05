@@ -8,13 +8,14 @@ function hostnameOf(target: string) {
   }
 }
 
-// Single-monitor view (iframe friendly, linked as /m/<id>).
+// Single-monitor view (iframe friendly, linked as /m/<id>). The shell is
+// server-rendered; bars/sparkline/badges are filled by app.js from the
+// embedded bootstrap (visitor-local time formatting).
 export function DetailPage(props: {
   monitor: MonitorTarget
   state: {
     incident: Record<string, IncidentRow>
     latency: Record<string, { time: number; ping: number; loc: string }[]>
-    startedAt?: Record<string, number>
   }
   bootstrap: string
 }) {
@@ -29,18 +30,25 @@ export function DetailPage(props: {
       <a href="/" class="back">
         ← 返回状态页
       </a>
+
       {hasData ? (
         <article class="detail-card">
           <div class="detail-head">
             <div class="detail-title">
-              <span class="emblem-sm" data-detail-icon>
+              <span class={`emblem-sm${isUp ? '' : ' bad'}`} data-detail-icon>
                 {isUp ? '✔' : '✖'}
               </span>
               <div>
                 <div class="detail-name">
                   {monitor.name}
                   {monitor.statusPageLink && (
-                    <a href={monitor.statusPageLink} target="_blank" rel="noopener noreferrer" class="ext">
+                    <a
+                      href={monitor.statusPageLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="ext"
+                      aria-label="访问站点"
+                    >
                       ↗
                     </a>
                   )}
@@ -61,10 +69,12 @@ export function DetailPage(props: {
               </span>
             </div>
           </div>
+
           <section>
             <h3 class="sec-title">可用率历史（90 天）</h3>
             <div class="bars wide" data-bars />
           </section>
+
           {!monitor.hideLatencyChart && (
             <section>
               <h3 class="sec-title">响应时间（近 12 小时）</h3>
@@ -78,6 +88,7 @@ export function DetailPage(props: {
           <p class="muted">暂无监测数据。</p>
         </article>
       )}
+
       <script
         type="application/json"
         id="bootstrap"

@@ -1,7 +1,16 @@
-/* UptimeFlare v3 client runtime — dependency-free vanilla JS.
-   Responsibilities: bootstrap parsing, uptime bars, live text refresh,
-   dropdown popups, dialogs (history / single-day incidents), and the
-   manage/login form flows. Everything renders after DOMContentLoaded. */
+/* ================================================================
+   UptimeFlare v3.1 client runtime — dependency-free vanilla JS.
+
+   Page branches (by bootstrap + markers):
+     status  — hero counters, uptime bars, live poll, dialogs
+     detail  — 90d bars, sparkline, badges
+     manage  — dropdowns, group suggestions, add/edit/delete
+     login   — setup/login submit
+
+   Everything is filled after DOMContentLoaded; the server already
+   rendered structure and static text (including nav + per-card
+   status), so there is no hydration and no layout swap.
+   ================================================================ */
 (function () {
   'use strict'
 
@@ -12,15 +21,7 @@
     return Array.prototype.slice.call((root || document).querySelectorAll(sel))
   }
 
-  function readBootstrap() {
-    var el = $('#bootstrap')
-    if (!el) return null
-    try {
-      return JSON.parse(el.textContent)
-    } catch (e) {
-      return null
-    }
-  }
+  // ---- formatting -----------------------------------------------------------
 
   function fmtTime(sec) {
     return new Date(sec * 1000).toLocaleString('zh-CN', {
@@ -59,17 +60,22 @@
     if (s > 0) parts.push(s + ' 秒')
     return parts.join(' ') || '0 秒'
   }
+  function fmtDate(sec) {
+    return new Date(sec * 1000).toLocaleDateString()
+  }
 
-  function barColor(percent) {
+  // ---- uptime math ------------------------------------------------------------
+
+  function overlapLen(x1, x2, y1, y2) {
+    return Math.max(0, Math.min(x2, y2) - Math.max(x1, y1))
+  }
+
+  function barClass(percent) {
     if (percent < 0) return ''
     if (percent >= 99.9) return 'up'
     if (percent >= 98) return 'up-98'
     if (percent >= 95) return 'warn'
     return 'bad'
-  }
-
-  function overlapLen(x1, x2, y1, y2) {
-    return Math.max(0, Math.min(x2, y2) - Math.max(x1, y1))
   }
 
   function computeDayStats(incidents, startedAt, nowSec, days) {
@@ -122,18 +128,19 @@
   }
 
   function renderBars(container, incidents, startedAt, nowSec, days, monitorName) {
-    if (!container) return
+    if (!container) return { totalMonitorTime: 0, totalDownTime: 0 }
     container.textContent = ''
     var stats = computeDayStats(incidents, startedAt, nowSec, days)
 
     stats.forEach(function (day) {
       var bar = document.createElement('div')
-      bar.className = 'bar ' + (day.percent === -1 ? '' : barColor(day.percent))
+      bar.className = 'bar ' + (day.percent === -1 ? '' : barClass(day.percent))
+
       var tip = document.createElement('span')
       tip.className = 'tip'
       tip.innerHTML =
         '<b>' +
-        new Date(day.dayStart * 1000).toLocaleDateString() +
+        fmtDate(day.dayStart) +
         (day.percent === -1 ? ' · 无数据' : ' · ' + day.percent.toFixed(2) + '%') +
         '</b>' +
         (day.downTime > 0
@@ -151,16 +158,23 @@
       container.appendChild(bar)
     })
 
-    return stats
+    var totals = { totalMonitorTime: 0, totalDownTime: 0 }
+    stats.forEach(function (day) {
+      totals.totalMonitorTime += day.monitorTime
+      totals.totalDownTime += day.downTime
+    })
+    return totals
   }
 
   // ---- single-day incident dialog ------------------------------------------------
 
   var dayDialog = $('#day-dialog')
+
   function openDayDialog(day, monitorName) {
     if (!dayDialog) return
-    $('[data-day-sub]', dayDialog).textContent = new Date(day.dayStart * 1000).toLocaleDateString()
+    $('[data-day-sub]', dayDialog).textContent = fmtDate(day.dayStart)
     $('[data-day-title]', dayDialog).textContent = (monitorName ? monitorName + ' · ' : '') + '当日故障'
+
     var body = $('[data-day-body]', dayDialog)
     body.textContent = ''
 
@@ -194,7 +208,7 @@
     dayDialog.showModal()
   }
 
-  // ---- history dialog (status page) ----------------------------------------------
+  // ---- history dialog ---------------------------------------------------------------
 
   var historyDialog = $('#history-dialog')
   var historyState = { month: null, monitor: '', page: 1 }
@@ -223,6 +237,7 @@
     body.textContent = ''
     var nowSec = Math.floor(Date.now() / 1000)
 
+    // Monitor filter.
     var toolbar = document.createElement('div')
     toolbar.className = 'dlg-toolbar'
     var select = document.createElement('select')
@@ -246,6 +261,7 @@
     toolbar.appendChild(select)
     body.appendChild(toolbar)
 
+    // Month navigation.
     var monthBar = document.createElement('div')
     monthBar.className = 'dlg-month'
     var prev = document.createElement('button')
@@ -271,11 +287,7 @@
     monthBar.appendChild(next)
     body.appendChild(monthBar)
 
-    var list = document.createElement('div')
-    list.style.display = 'flex'
-    list.style.flexDirection = 'column'
-    list.style.gap = '12px'
-
+    // Incident list for the month.
     var monthStart = new Date(
       Number(historyState.month.split('-')[0]),
       Number(historyState.month.split('-')[1]) - 1,
@@ -297,7 +309,9 @@
         var errors = incident.error.map(function (error, index) {
           return {
             start: fmtTime(incident.start[index]),
-            end: fmtTime(index === incident.error.length - 1 ? incidentEnd : incident.start[index + 1]),
+            end: fmtTime(
+              index === incident.error.length - 1 ? incidentEnd : incident.start[index + 1]
+            ),
             error: error,
           }
         })
@@ -320,6 +334,9 @@
         })
       : found
 
+    var list = document.createElement('div')
+    list.style.cssText = 'display:flex;flex-direction:column;gap:12px'
+
     if (filtered.length === 0) {
       var none = document.createElement('p')
       none.className = 'empty-state'
@@ -335,15 +352,13 @@
           var ongoing = incident.end == null
           var card = document.createElement('div')
           card.className = 'incident-card'
-          var head =
-            '<div class="incident-head"><div class="incident-name"><span class="dot ' +
-            (ongoing ? 'dot-down' : 'dot-pending') +
-            '"></span>' +
+          card.innerHTML =
+            '<div class="incident-head"><div class="incident-name">' +
+            '<span class="dot ' + (ongoing ? 'dot-down' : 'dot-pending') + '"></span>' +
             incident.monitorName +
             '</div><span class="badge">' +
             (ongoing ? '进行中' : '已恢复') +
-            '</span></div>'
-          var time =
+            '</span></div>' +
             '<div class="incident-time"><span>' +
             fmtTime(incident.start) +
             '</span><span style="color:#cbd5e1">→</span><span>' +
@@ -351,7 +366,6 @@
             '</span><span style="color:#cbd5e1">|</span><span>' +
             fmtDuration(incident.duration) +
             '</span></div>'
-          card.innerHTML = head + time
           incident.errors.forEach(function (err) {
             var div = document.createElement('div')
             div.className = 'incident-err'
@@ -392,7 +406,7 @@
     body.appendChild(list)
   }
 
-  // ---- status page ----------------------------------------------------------------
+  // ---- status page ---------------------------------------------------------------------
 
   function initStatusPage(bootstrap) {
     var overallUp = bootstrap.overallUp
@@ -401,9 +415,6 @@
 
     function paintOverall() {
       var text = $('[data-overall-text]')
-      var icon = $$('[data-overall-icon]')
-      var dot = $('[data-overall-dot]')
-      var up = $('[data-overall-up]')
       var tone = 'ok'
       var label = '全部服务运行正常'
       var glyph = '✔'
@@ -420,24 +431,28 @@
         label = overallDown + ' / ' + (overallUp + overallDown) + ' 个服务出现故障'
         glyph = '⚠'
       }
-      if (text) text.textContent = label
-      if (text && text.parentElement) {
-        text.parentElement.className = 'overall' + (tone ? ' ' + tone : '')
+      if (text) {
+        text.textContent = label
+        if (text.parentElement) {
+          text.parentElement.className = 'overall' + (tone ? ' ' + tone : '')
+        }
       }
-      if (dot) dot.className = 'pulse-dot' + (tone === 'bad' ? ' bad' : tone === 'warn' ? ' warn' : '')
-      icon.forEach(function (el) {
+      var dot = $('[data-overall-dot]')
+      if (dot) dot.className = 'pulse-dot' + (tone ? ' ' + tone : '')
+      $$('[data-overall-icon]').forEach(function (el) {
         el.textContent = glyph
       })
-      if (up) up.textContent = overallUp
+      var up = $('[data-overall-up]')
+      if (up) {
+        up.textContent = overallUp
+        up.className = 'summary-num' + (overallUp > 0 ? ' ok' : '')
+      }
       var updated = $('[data-updated-at]')
       if (updated && lastUpdateSec) {
-        updated.textContent = new Date(lastUpdateSec * 1000).toLocaleString('zh-CN', {
-          hour12: false,
-        })
+        updated.textContent = new Date(lastUpdateSec * 1000).toLocaleString('zh-CN', { hour12: false })
       }
     }
 
-    // Keep the per-card "x 前" labels ticking between data polls.
     function paintAgo() {
       if (!lastUpdateSec) return
       $$('[data-ago]').forEach(function (el) {
@@ -445,11 +460,23 @@
       })
     }
 
+    function inMaintenance(monitorId, nowMs) {
+      return bootstrap.maintenances.some(function (m) {
+        return (
+          nowMs >= new Date(m.start).getTime() &&
+          (!m.end || nowMs <= new Date(m.end).getTime()) &&
+          (m.monitors || []).indexOf(monitorId) !== -1
+        )
+      })
+    }
+
+    // Cards: bars, percent, maintenance-override status, latency, ago.
     bootstrap.monitors.forEach(function (monitor) {
       var card = $('[data-monitor="' + monitor.id + '"]')
       if (!card) return
       var incidents = bootstrap.incident[monitor.id] || []
-      var stats = renderBars(
+
+      var totals = renderBars(
         $('[data-bars]', card),
         incidents,
         (bootstrap.startedAt || {})[monitor.id],
@@ -457,75 +484,53 @@
         30,
         monitor.name
       )
-      var totalMonitorTime = 0
-      var totalDownTime = 0
-      stats.forEach(function (day) {
-        totalMonitorTime += day.monitorTime
-        totalDownTime += day.downTime
-      })
       var percent = $('[data-percent]', card)
       if (percent) {
-        percent.textContent =
-          totalMonitorTime > 0
-            ? (((totalMonitorTime - totalDownTime) / totalMonitorTime) * 100).toFixed(2)
+        var value =
+          totals.totalMonitorTime > 0
+            ? (
+                ((totals.totalMonitorTime - totals.totalDownTime) / totals.totalMonitorTime) * 100
+              ).toFixed(2)
             : '—'
-        if (totalMonitorTime > 0) percent.innerHTML += '<span style="color:#94a3b8">%</span>'
+        percent.textContent = value
+        if (value !== '—') percent.innerHTML += '<span style="color:#94a3b8">%</span>'
       }
 
-      // Maintenance override for the pill/label.
-      var nowMs = Date.now()
-      var inMaintenance = bootstrap.maintenances.some(function (maintenance) {
-        return (
-          nowMs >= new Date(maintenance.start).getTime() &&
-          (!maintenance.end || nowMs <= new Date(maintenance.end).getTime()) &&
-          (maintenance.monitors || []).indexOf(monitor.id) !== -1
-        )
-      })
-      if (inMaintenance) {
-        var pill = $('[data-pill]', card)
-        if (pill) {
-          pill.className = 'pill pill-maintenance'
-          $('[data-pill-label]', pill).textContent = '维护中'
-        }
-      }
-
-      var latencies = bootstrap.latency[monitor.id] || []
-      if (latencies.length) {
-        var latency = $('[data-latency]', card)
-        var last = latencies[latencies.length - 1]
-        latency.textContent = last.ping + 'ms'
-        latency.style.color = last.ping > 500 ? '#d97706' : '#334155'
+      if (inMaintenance(monitor.id, Date.now())) {
+        var dot = $('[data-dot]', card)
+        if (dot) dot.className = 'dot dot-maintenance'
+        var statusLabel = $('[data-status-label]', card)
+        if (statusLabel) statusLabel.textContent = '维护中'
       }
 
       var ago = $('[data-ago]', card)
-      if (ago && bootstrap.lastUpdate) ago.textContent = fmtAgo(bootstrap.lastUpdate) + '前'
+      if (ago && lastUpdateSec) ago.textContent = fmtAgo(lastUpdateSec) + '前'
     })
 
-    // Render active maintenance alerts.
-    var nowMs = Date.now()
-    var active = bootstrap.maintenances.filter(function (maintenance) {
-      return (
-        nowMs >= new Date(maintenance.start).getTime() &&
-        (!maintenance.end || nowMs <= new Date(maintenance.end).getTime())
-      )
-    })
+    // Active maintenance alerts (time-based, regardless of monitor list).
     var alertBox = $('[data-maint-active]')
     if (alertBox) {
-      active.forEach(function (maintenance) {
-        var div = document.createElement('div')
-        div.className = 'maint ' + (maintenance.color || 'amber')
-        div.innerHTML =
-          '<span class="maint-title">' +
-          (maintenance.title || '计划维护') +
-          '</span><span class="maint-time">' +
-          fmtTime(Math.round(new Date(maintenance.start).getTime() / 1000)) +
-          (maintenance.end
-            ? ' → ' + fmtTime(Math.round(new Date(maintenance.end).getTime() / 1000))
-            : '') +
-          '</span><span class="maint-body"></span>'
-        $('.maint-body', div).textContent = maintenance.body
-        alertBox.appendChild(div)
-      })
+      var nowMs = Date.now()
+      bootstrap.maintenances
+        .filter(function (m) {
+          return (
+            nowMs >= new Date(m.start).getTime() &&
+            (!m.end || nowMs <= new Date(m.end).getTime())
+          )
+        })
+        .forEach(function (m) {
+          var div = document.createElement('div')
+          div.className = 'maint ' + (m.color || 'amber')
+          div.innerHTML =
+            '<span class="maint-title">' +
+            (m.title || '计划维护') +
+            '</span><span class="maint-time">' +
+            fmtTime(Math.round(new Date(m.start).getTime() / 1000)) +
+            (m.end ? ' → ' + fmtTime(Math.round(new Date(m.end).getTime() / 1000)) : '') +
+            '</span><span class="maint-body"></span>'
+          $('.maint-body', div).textContent = m.body
+          alertBox.appendChild(div)
+        })
     }
 
     paintOverall()
@@ -542,7 +547,7 @@
       })
     }
 
-    // Live refresh of light fields (latency/ago/status counts).
+    // Light live updates (overall counters, latency, ago) from the cached API.
     setInterval(async function () {
       try {
         var res = await fetch('/api/data', { cache: 'no-store' })
@@ -552,6 +557,7 @@
         overallDown = data.down
         lastUpdateSec = data.updatedAt || lastUpdateSec
         paintOverall()
+        paintAgo()
         data.monitors &&
           Object.keys(data.monitors).forEach(function (id) {
             var card = $('[data-monitor="' + id + '"]')
@@ -560,16 +566,14 @@
             var latency = $('[data-latency]', card)
             latency.textContent = summary.latency + 'ms'
             latency.style.color = summary.latency > 500 ? '#d97706' : '#334155'
-            var ago = $('[data-ago]', card)
-            if (ago && data.updatedAt) ago.textContent = fmtAgo(data.updatedAt) + '前'
           })
       } catch (e) {
-        /* offline is fine; next tick retries */
+        /* offline is fine; the next tick retries */
       }
     }, 120_000)
   }
 
-  // ---- detail page ------------------------------------------------------------------
+  // ---- detail page -----------------------------------------------------------------------
 
   function initDetailPage(bootstrap) {
     var monitor = bootstrap.monitor
@@ -577,7 +581,7 @@
     var latencies = bootstrap.latency || []
     var nowSec = Math.floor(Date.now() / 1000)
 
-    // Maintenance override for the status badge (same rule as the cards).
+    // Maintenance override for the badge.
     var inMaintenance = (bootstrap.maintenances || []).some(function (m) {
       var t = Date.now()
       return (
@@ -596,29 +600,22 @@
       }
     }
 
-    var stats = renderBars(
-      $('[data-bars]'),
-      incidents,
-      bootstrap.startedAt,
-      nowSec,
-      90,
-      monitor.name
-    )
-    var totalMonitorTime = 0
-    var totalDownTime = 0
-    stats.forEach(function (day) {
-      totalMonitorTime += day.monitorTime
-      totalDownTime += day.downTime
-    })
+    var totals = renderBars($('[data-bars]'), incidents, bootstrap.startedAt, nowSec, 90, monitor.name)
     var uptime = $('[data-detail-uptime]')
-    if (uptime && totalMonitorTime > 0) {
+    if (uptime) {
       uptime.textContent =
-        '总可用率 ' + (((totalMonitorTime - totalDownTime) / totalMonitorTime) * 100).toPrecision(4) + '%'
+        totals.totalMonitorTime > 0
+          ? '总可用率 ' +
+            (
+              ((totals.totalMonitorTime - totals.totalDownTime) / totals.totalMonitorTime) * 100
+            ).toPrecision(4) +
+            '%'
+          : '总可用率 —'
     }
     var ago = $('[data-detail-ago]')
     if (ago && bootstrap.lastUpdate) ago.textContent = fmtAgo(bootstrap.lastUpdate) + '前更新'
 
-    // Sparkline (plain SVG).
+    // Sparkline with hover crosshair + tooltip.
     var spark = $('[data-sparkline]')
     if (spark && latencies.length >= 2) {
       var width = 720
@@ -628,9 +625,11 @@
       var padBottom = 22
       var maxPing = Math.max.apply(
         null,
-        latencies.map(function (p) {
-          return p.ping
-        }).concat([50])
+        latencies
+          .map(function (p) {
+            return p.ping
+          })
+          .concat([50])
       )
       var yMax = maxPing * 1.15
       var startTime = latencies[0].time * 1000
@@ -647,6 +646,7 @@
           return (i === 0 ? 'M' : 'L') + x(p.time * 1000).toFixed(1) + ',' + y(p.ping).toFixed(1)
         })
         .join(' ')
+
       spark.innerHTML =
         '<svg viewBox="0 0 ' + width + ' ' + height + '" preserveAspectRatio="none">' +
         '<defs><linearGradient id="sg" x1="0" y1="0" x2="0" y2="1">' +
@@ -659,13 +659,11 @@
         '<line x1="0" x2="0" y1="' + padTop + '" y2="' + (height - padBottom) +
         '" stroke="#0d9488" stroke-opacity="0.35" stroke-width="1" vector-effect="non-scaling-stroke"/>' +
         '<circle r="4" fill="#0d9488" stroke="#fff" stroke-width="2"/>' +
-        '</g>' +
-        '</svg>' +
+        '</g></svg>' +
         '<div class="spark-tip" hidden></div>' +
         '<div style="position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-between;font-size:10px;color:#94a3b8">' +
         '<span>12 小时前</span><span>现在</span></div>'
 
-      // Hover: nearest-point crosshair + tooltip (ping / location / time).
       var svg = $('svg', spark)
       var hoverGroup = $('[data-hover]', spark)
       var hoverLine = $('line', hoverGroup)
@@ -711,7 +709,7 @@
     }
   }
 
-  // ---- dropdown (vanilla, keyboard + outside click + flip) ----------------------------
+  // ---- dropdown factory --------------------------------------------------------------------
 
   function setupDropdown(box, options, onChange) {
     var trigger = $('[data-dropdown]', box)
@@ -730,13 +728,15 @@
       })
     }
 
-    // The popup stays in the DOM from SSR but must be [hidden] until opened —
-    // this is exactly what prevents "menus visible on page load".
+    // The popup lives in the DOM from SSR but stays [hidden] until opened.
     function setOpen(next) {
       if (next) {
         var rect = box.getBoundingClientRect()
         var menuHeight = Math.min(options.length * 44 + 12, 264)
-        menu.classList.toggle('flip-up', rect.bottom + menuHeight > window.innerHeight && rect.top - menuHeight > 0)
+        menu.classList.toggle(
+          'flip-up',
+          rect.bottom + menuHeight > window.innerHeight && rect.top - menuHeight > 0
+        )
       }
       open = next
       trigger.setAttribute('aria-expanded', String(open))
@@ -784,7 +784,7 @@
     }
   }
 
-  // ---- manage page --------------------------------------------------------------------
+  // ---- manage page ---------------------------------------------------------------------------
 
   function initManagePage(bootstrap) {
     var form = $('#monitor-form')
@@ -795,6 +795,7 @@
     var loading = false
     var editingId = ''
 
+    // Existing groups for the suggestion popup (list badges + default).
     var groups = Array.from(
       new Set(
         ['核心服务'].concat(
@@ -821,7 +822,7 @@
       function () {}
     )
 
-    // Group suggestion popup (existing groups, filtered by input).
+    // Group suggestion popup.
     var groupBox = $('[data-group-box]', form)
     var groupInput = $('[data-group-input]', form)
     var groupToggle = $('[data-group-toggle]', form)
@@ -849,8 +850,7 @@
         button.appendChild(tag)
         button.addEventListener('click', function () {
           groupInput.value = group
-          groupSuggest.hidden = true
-          groupToggle.setAttribute('aria-expanded', 'false')
+          setGroupSuggestOpen(false)
         })
         li.appendChild(button)
         groupSuggest.appendChild(li)
@@ -874,6 +874,9 @@
     document.addEventListener('mousedown', function (event) {
       if (!groupBox.contains(event.target)) setGroupSuggestOpen(false)
     })
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape') setGroupSuggestOpen(false)
+    })
 
     function setMessage(text) {
       message.textContent = text || ''
@@ -881,17 +884,17 @@
     }
     function setEditing(id) {
       editingId = id
-      form.dataset.editing = id
       $('[data-form-title]').textContent = id ? '编辑站点' : '添加站点'
-      $('[data-form-hint]').textContent = id ? '修改名称或地址不会丢失历史数据。' : '新站点将在下一轮检查后显示状态。'
+      $('[data-form-hint]').textContent = id
+        ? '修改名称或地址不会丢失历史数据。'
+        : '新站点将在下一轮检查后显示状态。'
       submitButton.textContent = id ? '保存修改' : '保存站点'
       cancelButton.classList.toggle('hidden', !id)
       $$('.monitor-row').forEach(function (row) {
         row.classList.toggle('editing', row.dataset.row === id)
       })
     }
-
-    // Leave edit mode AND restore pristine defaults (form fields + dropdowns).
+    // Leave edit mode AND restore pristine defaults (fields + dropdowns).
     function clearEditMode() {
       setEditing('')
       form.reset()
@@ -912,16 +915,16 @@
         form.elements.group.value = button.dataset.group
         form.elements.preview.value = button.dataset.preview
         form.elements.statusPageLink.value =
-          button.dataset.link && button.dataset.link !== button.dataset.target ? button.dataset.link : ''
+          button.dataset.link && button.dataset.link !== button.dataset.target
+            ? button.dataset.link
+            : ''
         intervalDropdown.value = button.dataset.interval
         timeoutDropdown.value = String(Math.round(Number(button.dataset.timeout) / 1000))
         setMessage('正在编辑「' + button.dataset.name + '」，修改不会影响历史数据。')
         form.scrollIntoView({ behavior: 'smooth', block: 'start' })
       })
     })
-    cancelButton.addEventListener('click', function () {
-      clearEditMode()
-    })
+    cancelButton.addEventListener('click', clearEditMode)
 
     form.addEventListener('submit', async function (event) {
       event.preventDefault()
@@ -991,12 +994,11 @@
     })
   }
 
-  // ---- login page ----------------------------------------------------------------------
+  // ---- login page ------------------------------------------------------------------------------
 
-  function initLoginPage(hasAdmin) {
+  function initLoginPage() {
     var form = $('#login-form')
     if (!form) return
-    hasAdmin = form.dataset.hasAdmin === 'true'
     var submitButton = $('[data-submit]', form)
     submitButton.disabled = false
     form.addEventListener('submit', async function (event) {
@@ -1007,7 +1009,7 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            action: hasAdmin ? 'login' : 'setup',
+            action: form.dataset.hasAdmin === 'true' ? 'login' : 'setup',
             username: form.elements.username.value,
             password: form.elements.password.value,
           }),
@@ -1022,24 +1024,7 @@
     })
   }
 
-  // ---- nav auth state -------------------------------------------------------------------
-
-  function initNav() {
-    fetch('/api/admin', { credentials: 'include', cache: 'no-store' })
-      .then(function (res) {
-        return res.json()
-      })
-      .then(function (data) {
-        if (!data.isAuthenticated) return
-        var login = $('[data-login]')
-        if (login) login.remove()
-        var admin = $('[data-when-admin]')
-        if (admin) admin.classList.remove('hidden')
-      })
-      .catch(function () {})
-  }
-
-  // ---- logout ----------------------------------------------------------------------------
+  // ---- logout (delegated; the button only exists in the admin nav) -------------------------------
 
   document.addEventListener('click', function (event) {
     var target = event.target.closest('[data-action="logout"]')
@@ -1054,13 +1039,17 @@
     })
   })
 
-  // ---- bootstrap --------------------------------------------------------------------------
+  // ---- bootstrap ----------------------------------------------------------------------------------
 
   document.addEventListener('DOMContentLoaded', function () {
-    initNav()
-
-    var bootstrap = readBootstrap()
-    if (!bootstrap) return
+    var el = $('#bootstrap')
+    if (!el) return
+    var bootstrap
+    try {
+      bootstrap = JSON.parse(el.textContent)
+    } catch (e) {
+      return
+    }
 
     if (bootstrap.monitors && $('[data-overall-text]')) {
       initStatusPage(bootstrap)
@@ -1072,15 +1061,17 @@
       initManagePage(bootstrap)
     }
     if ($('#login-form')) {
-      initLoginPage(document.body.dataset.hasAdmin === 'true')
+      initLoginPage()
     }
 
-    // Wire dialog close buttons.
+    // Dialog chrome: close buttons + backdrop click.
     $$('dialog.dlg').forEach(function (dialog) {
       var close = $('.dlg-close', dialog)
-      if (close) close.addEventListener('click', function () {
-        dialog.close()
-      })
+      if (close) {
+        close.addEventListener('click', function () {
+          dialog.close()
+        })
+      }
       dialog.addEventListener('click', function (event) {
         if (event.target === dialog) dialog.close()
       })
