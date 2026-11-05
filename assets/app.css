@@ -527,12 +527,13 @@ dialog.dlg::backdrop { background: rgba(15, 23, 42, 0.3); backdrop-filter: blur(
 
 .relative { position: relative; }
 
-.dropdown, .dropdown-input {
+.dropdown {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
   width: 100%;
+  padding: 0.75rem 1rem;
   border: 1px solid #e2e8f0;
   border-radius: var(--r-md);
   background: #f8fafc;
@@ -541,9 +542,6 @@ dialog.dlg::backdrop { background: rgba(15, 23, 42, 0.3); backdrop-filter: blur(
   text-align: left;
   transition: border-color 0.2s ease;
 }
-/* Same padding-derived height as the .field inputs. */
-.dropdown { padding: 0.75rem 1rem; }
-.dropdown-input { height: 3rem; padding: 0 1rem; }
 
 .dropdown:hover { border-color: #cbd5e1; }
 .dropdown[aria-expanded='true'] { border-color: var(--faint); }
@@ -647,6 +645,11 @@ dialog.dlg::backdrop { background: rgba(15, 23, 42, 0.3); backdrop-filter: blur(
   outline: none;
   transition: border-color 0.2s ease, background 0.2s ease;
 }
+/* Breathing room between the label text and its control; inputs nested in a
+   wrapper (分组) inherit the gap from the wrapper instead. */
+.field > input,
+.field > .relative,
+.field > .dropdown { margin-top: 0.5rem; }
 .field input:focus { border-color: var(--faint); background: #fff; }
 .field-row { display: grid; gap: 1rem; }
 @media (min-width: 640px) { .field-row { grid-template-columns: 1fr 1fr; } }

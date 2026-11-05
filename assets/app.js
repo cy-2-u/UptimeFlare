@@ -263,29 +263,44 @@
     body.textContent = ''
     var nowSec = Math.floor(Date.now() / 1000)
 
-    // Monitor filter.
+    // Monitor filter — custom dropdown popup (same component as the manage
+    // page), never the browser-native select menu.
     var toolbar = document.createElement('div')
     toolbar.className = 'dlg-toolbar'
-    var select = document.createElement('select')
-    select.className = 'dropdown-input'
-    var all = document.createElement('option')
-    all.value = ''
-    all.textContent = '全部站点'
-    select.appendChild(all)
-    bootstrap.monitors.forEach(function (monitor) {
-      var option = document.createElement('option')
-      option.value = monitor.id
-      option.textContent = monitor.name
-      select.appendChild(option)
-    })
-    select.value = historyState.monitor
-    select.addEventListener('change', function () {
-      historyState.monitor = select.value
-      historyState.page = 1
-      renderHistory(bootstrap)
-    })
-    toolbar.appendChild(select)
+    var box = document.createElement('div')
+    box.className = 'relative'
+    var trigger = document.createElement('button')
+    trigger.type = 'button'
+    trigger.className = 'dropdown'
+    trigger.setAttribute('data-dropdown', 'history-monitor')
+    trigger.setAttribute('aria-haspopup', 'listbox')
+    trigger.setAttribute('aria-expanded', 'false')
+    trigger.innerHTML =
+      '<span data-dropdown-label></span>' +
+      '<svg class="chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<path d="M3.5 6l4.5 4.5L12.5 6"/></svg>'
+    var menu = document.createElement('ul')
+    menu.className = 'menu'
+    menu.setAttribute('data-menu', 'history-monitor')
+    menu.hidden = true
+    box.appendChild(trigger)
+    box.appendChild(menu)
+    toolbar.appendChild(box)
     body.appendChild(toolbar)
+
+    setupDropdown(
+      box,
+      [{ value: '', label: '全部站点' }].concat(
+        bootstrap.monitors.map(function (monitor) {
+          return { value: monitor.id, label: monitor.name }
+        })
+      ),
+      function (value) {
+        historyState.monitor = value
+        historyState.page = 1
+        renderHistory(bootstrap)
+      }
+    ).value = historyState.monitor
 
     // Month navigation.
     var monthBar = document.createElement('div')
@@ -754,7 +769,15 @@
       })
     }
 
-    // The popup lives in the DOM from SSR but stays [hidden] until opened.
+    // The popup lives in the DOM (SSR or dynamically created) but stays
+    // [hidden] until opened. Outside-click/Esc listeners exist only while
+    // open, so dynamic instances (history dialog) never leak listeners.
+    function onOutside(event) {
+      if (open && !box.contains(event.target)) setOpen(false)
+    }
+    function onKey(event) {
+      if (open && event.key === 'Escape') setOpen(false)
+    }
     function setOpen(next) {
       if (next) {
         var rect = box.getBoundingClientRect()
@@ -763,6 +786,11 @@
           'flip-up',
           rect.bottom + menuHeight > window.innerHeight && rect.top - menuHeight > 0
         )
+        document.addEventListener('mousedown', onOutside)
+        document.addEventListener('keydown', onKey)
+      } else {
+        document.removeEventListener('mousedown', onOutside)
+        document.removeEventListener('keydown', onKey)
       }
       open = next
       trigger.setAttribute('aria-expanded', String(open))
@@ -774,12 +802,6 @@
     menu.hidden = true
     trigger.addEventListener('click', function () {
       setOpen(!open)
-    })
-    document.addEventListener('mousedown', function (event) {
-      if (open && !box.contains(event.target)) setOpen(false)
-    })
-    document.addEventListener('keydown', function (event) {
-      if (open && event.key === 'Escape') setOpen(false)
     })
 
     options.forEach(function (option) {
