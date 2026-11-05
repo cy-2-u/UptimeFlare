@@ -549,16 +549,18 @@ dialog.dlg::backdrop { background: rgba(15, 23, 42, 0.3); backdrop-filter: blur(
   justify-content: space-between;
   gap: 0.5rem;
   width: 100%;
-  height: 3rem;
-  padding: 0 1rem;
   border: 1px solid #e2e8f0;
   border-radius: 1rem;
   background: #f8fafc;
+  font: inherit;
   font-size: 14px;
   color: var(--ink);
   text-align: left;
   transition: border-color 0.2s ease;
 }
+/* Trigger box: same padding-derived height as the .field inputs (no fixed height). */
+.dropdown { padding: 0.75rem 1rem; }
+.dropdown-input { height: 3rem; padding: 0 1rem; }
 .dropdown:hover { border-color: #cbd5e1; }
 .dropdown[aria-expanded='true'] { border-color: #94a3b8; }
 .dropdown .chev, .chevron-btn .chev { width: 14px; height: 14px; color: #64748b; transition: transform 0.2s ease; }
@@ -661,7 +663,6 @@ dialog.dlg::backdrop { background: rgba(15, 23, 42, 0.3); backdrop-filter: blur(
 .field { display: block; }
 .field > span:first-child { display: block; font-size: 14px; font-weight: 500; color: #334155; }
 .field input, .field select {
-  margin-top: 0.5rem;
   width: 100%;
   padding: 0.75rem 1rem;
   border: 1px solid #e2e8f0;
@@ -673,6 +674,10 @@ dialog.dlg::backdrop { background: rgba(15, 23, 42, 0.3); backdrop-filter: blur(
   outline: none;
   transition: border-color 0.2s ease, background 0.2s ease;
 }
+/* Direct-child inputs and dropdown wrappers share the same label gap;
+   inputs nested inside a wrapper (分组) get the gap from the wrapper. */
+.field > input { margin-top: 0.5rem; }
+.field > .relative { margin-top: 0.5rem; }
 .field input:focus { border-color: #94a3b8; background: #fff; }
 .field-row { display: grid; gap: 1rem; }
 @media (min-width: 640px) { .field-row { grid-template-columns: 1fr 1fr; } }

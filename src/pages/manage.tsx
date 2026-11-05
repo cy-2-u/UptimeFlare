@@ -52,8 +52,20 @@ export function ManagePage(props: { monitors: MonitorTarget[] }) {
                 <label class="field">
                   <span>检查间隔</span>
                   <div class="relative" data-interval-box>
-                    <button type="button" class="dropdown" data-dropdown="interval">
+                    <button type="button" class="dropdown" data-dropdown="interval" aria-haspopup="listbox" aria-expanded="false">
                       <span data-dropdown-label>10 分钟</span>
+                      <svg
+                        class="chev"
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M3.5 6l4.5 4.5L12.5 6" />
+                      </svg>
                     </button>
                     <ul class="menu" data-menu="interval" hidden />
                   </div>
@@ -63,8 +75,20 @@ export function ManagePage(props: { monitors: MonitorTarget[] }) {
                 <label class="field">
                   <span>超时时间</span>
                   <div class="relative" data-timeout-box>
-                    <button type="button" class="dropdown" data-dropdown="timeout">
+                    <button type="button" class="dropdown" data-dropdown="timeout" aria-haspopup="listbox" aria-expanded="false">
                       <span data-dropdown-label>5 秒</span>
+                      <svg
+                        class="chev"
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M3.5 6l4.5 4.5L12.5 6" />
+                      </svg>
                     </button>
                     <ul class="menu" data-menu="timeout" hidden />
                   </div>
