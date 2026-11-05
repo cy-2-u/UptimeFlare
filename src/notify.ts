@@ -7,11 +7,17 @@ export function shouldSendNotification() {
 }
 
 // 通知区域修改开始
-const WEBHOOK_URL = 'https://api.chuckfang.com/%E7%AC%AC%E4%BA%94%E4%B8%AA%E5%AD%A3%E8%8A%82'
-const WEBHOOK_TIMEOUT_MS = 10000
-const WEBHOOK_HEADERS: Record<string, string> = {}
+// 推送渠道：「及时通知」(timelynotify) —— GET {BASE}/{标题}/{正文}?icon=&group=&ttl=&sound=
+// 标题/正文自动 URL 编码；换成任何同类 GET 推送服务只需改下面几个常量。
+const PUSH_BASE_URL = 'https://timelynotify.oicode.cn/Nt5RQRHQ5Vg5fNHdJF54Z9'
+const PUSH_TIMEOUT_MS = 10000
+const PUSH_ICON = 'https://static.wallleap.cn/temp/nwvgnm7l2on5u6c531mo.jpg'
+const PUSH_GROUP = '服务状态'
+const PUSH_TTL_SEC = 600
+const PUSH_SOUND = 'multiwayinvitation'
 
-function buildNotificationMessage({
+// 文案拆成「标题 + 正文」两段：标题短且带状态色，正文放细节。
+export function buildNotificationMessage({
   monitor,
   isUp,
   timeIncidentStart,
@@ -25,7 +31,7 @@ function buildNotificationMessage({
   timeNow: number
   reason: string
   timeZone: string
-}) {
+}): { title: string; body: string } {
   function formatTime(timestamp: number) {
     const parts = new Intl.DateTimeFormat('zh-CN', {
       month: 'numeric',
@@ -49,20 +55,32 @@ function buildNotificationMessage({
   const timeIncidentStartFormatted = formatTime(timeIncidentStart)
 
   if (isUp) {
-    return `🟢 [${monitor.name}] 已恢复正常。\n服务自 ${timeNowFormatted} 起恢复可用，本次中断持续 ${downtimeMinutes} 分钟。`
+    return {
+      title: `🟢 [${monitor.name}] 已恢复`,
+      body: `服务自 ${timeNowFormatted} 起恢复可用，本次中断持续 ${downtimeMinutes} 分钟。`,
+    }
   }
 
   if (timeNow === timeIncidentStart) {
-    return `🔴 [${monitor.name}] 已宕机。\n服务自 ${timeNowFormatted} 起不可用。\n原因: ${reason || '未说明'}`
+    return {
+      title: `🔴 [${monitor.name}] 已宕机`,
+      body: `服务自 ${timeNowFormatted} 起不可用。\n原因: ${reason || '未说明'}`,
+    }
   }
 
-  return `🔴 [${monitor.name}] 依然宕机。\n服务自 ${timeIncidentStartFormatted} 起不可用 (已持续 ${downtimeMinutes} 分钟)。\n原因: ${reason || '未说明'}`
+  return {
+    title: `🔴 [${monitor.name}] 依然宕机`,
+    body: `服务自 ${timeIncidentStartFormatted} 起不可用 (已持续 ${downtimeMinutes} 分钟)。\n原因: ${reason || '未说明'}`,
+  }
 }
 
-function buildWebhookBody(message: string) {
-  return {
-    msg: message,
-  }
+export function buildPushUrl(title: string, body: string): string {
+  const params = new URLSearchParams()
+  if (PUSH_ICON) params.set('icon', PUSH_ICON)
+  if (PUSH_GROUP) params.set('group', PUSH_GROUP)
+  if (PUSH_TTL_SEC > 0) params.set('ttl', String(PUSH_TTL_SEC))
+  if (PUSH_SOUND) params.set('sound', PUSH_SOUND)
+  return `${PUSH_BASE_URL}/${encodeURIComponent(title)}/${encodeURIComponent(body)}?${params.toString()}`
 }
 // 通知区域修改结束
 
@@ -89,18 +107,14 @@ export async function sendNotification(context: {
     return
   }
 
-  const message = buildNotificationMessage({
+  const { title, body } = buildNotificationMessage({
     ...context,
     timeZone: workerConfig.notification?.timeZone ?? 'Etc/GMT',
   })
-  const body = buildWebhookBody(message)
+  const url = buildPushUrl(title, body)
 
   try {
-    const response = await fetchWithTimeout(WEBHOOK_URL, WEBHOOK_TIMEOUT_MS, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...WEBHOOK_HEADERS },
-      body: JSON.stringify(body),
-    })
+    const response = await fetchWithTimeout(url, PUSH_TIMEOUT_MS, { method: 'GET' })
 
     if (!response.ok) {
       console.log(
