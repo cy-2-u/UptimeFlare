@@ -66,6 +66,12 @@
 
   // ---- uptime math ------------------------------------------------------------
 
+  // Defensive: the incident payload must be an array of records; any other
+  // shape degrades to "no history" instead of throwing mid-render.
+  function incidentList(value) {
+    return Array.isArray(value) ? value : []
+  }
+
   function overlapLen(x1, x2, y1, y2) {
     return Math.max(0, Math.min(x2, y2) - Math.max(x1, y1))
   }
@@ -321,7 +327,7 @@
 
     var found = []
     bootstrap.monitors.forEach(function (monitor) {
-      var incidents = bootstrap.incident[monitor.id] || []
+      var incidents = incidentList(bootstrap.incident[monitor.id])
       incidents.forEach(function (incident) {
         var incidentStart = incident.start[0]
         var incidentEnd = incident.end == null ? nowSec : incident.end
@@ -494,7 +500,7 @@
     bootstrap.monitors.forEach(function (monitor) {
       var card = $('[data-monitor="' + monitor.id + '"]')
       if (!card) return
-      var incidents = bootstrap.incident[monitor.id] || []
+      var incidents = incidentList(bootstrap.incident[monitor.id])
 
       var totals = renderBars(
         $('[data-bars]', card),

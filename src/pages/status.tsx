@@ -1,11 +1,11 @@
-import type { IncidentRow, MaintenanceConfig, MonitorTarget } from '../types'
+import type { IncidentRecord, MaintenanceConfig, MonitorTarget } from '../types'
 
 export type StatusBootstrap = {
   lastUpdate: number
   overallUp: number
   overallDown: number
   monitors: MonitorTarget[]
-  incident: Record<string, IncidentRow>
+  incident: Record<string, IncidentRecord[]>
   startedAt?: Record<string, number>
   lastPing: Record<string, number>
   maintenances: MaintenanceConfig[]
@@ -17,10 +17,10 @@ const STATUS_LABEL: Record<string, string> = {
   pending: '等待检查',
 }
 
-function statusOf(monitor: MonitorTarget, incident: Record<string, IncidentRow>) {
+function statusOf(monitor: MonitorTarget, incident: Record<string, IncidentRecord[]>) {
   const incidents = incident[monitor.id]
-  if (!incidents || incidents.start.length === 0) return 'pending'
-  return incidents.end[incidents.end.length - 1] === null ? 'down' : 'up'
+  if (!incidents || incidents.length === 0) return 'pending'
+  return incidents[incidents.length - 1].end === null ? 'down' : 'up'
 }
 
 function hostnameOf(target: string) {
@@ -42,7 +42,7 @@ export function StatusPage(props: {
   pageConfigTitle: string
   monitors: MonitorTarget[]
   state: {
-    incident: Record<string, IncidentRow>
+    incident: Record<string, IncidentRecord[]>
     startedAt?: Record<string, number>
   }
   bootstrap: StatusBootstrap

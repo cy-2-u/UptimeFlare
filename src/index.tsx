@@ -68,7 +68,7 @@ function getScheduler(env: Env['Bindings']) {
 async function readState(env: Env['Bindings']): Promise<{
   meta: MetaRow
   state: {
-    incident: Record<string, import('./state-format').IncidentRow>
+    incident: Record<string, import('./types').IncidentRecord[]>
     latency: Record<string, import('./types').LatencyRecord[]>
     startedAt?: Record<string, number>
   }
@@ -84,11 +84,18 @@ async function readState(env: Env['Bindings']): Promise<{
     }
   }
 
-  const incident: Record<string, import('./state-format').IncidentRow> = {}
+  // Incidents are stored columnar for cheap D1 writes, but the page payload
+  // and client runtime consume plain IncidentRecord[] — convert here, once.
+  const incident: Record<string, import('./types').IncidentRecord[]> = {}
   for (const [id, row] of snapshot.inc) {
     if (row.value === null) continue
     const incidents = JSON.parse(row.value) as import('./state-format').IncidentRow
-    if (incidents.start.length > 0) incident[id] = incidents
+    if (incidents.start.length === 0) continue
+    incident[id] = incidents.start.map((starts, i) => ({
+      start: starts,
+      end: incidents.end[i],
+      error: incidents.error[i],
+    }))
   }
 
   const latency: Record<string, import('./types').LatencyRecord[]> = {}

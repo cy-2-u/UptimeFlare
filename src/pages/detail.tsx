@@ -1,4 +1,4 @@
-import type { IncidentRow, MonitorTarget } from '../types'
+import type { IncidentRecord, MonitorTarget } from '../types'
 
 function hostnameOf(target: string) {
   try {
@@ -14,7 +14,7 @@ function hostnameOf(target: string) {
 export function DetailPage(props: {
   monitor: MonitorTarget
   state: {
-    incident: Record<string, IncidentRow>
+    incident: Record<string, IncidentRecord[]>
     latency: Record<string, { time: number; ping: number; loc: string }[]>
   }
   bootstrap: string
@@ -22,8 +22,8 @@ export function DetailPage(props: {
   const { monitor, state } = props
   const incidents = state.incident[monitor.id]
   const latencies = state.latency[monitor.id] ?? []
-  const hasData = (incidents ? incidents.start.length : 0) > 0 || latencies.length > 0
-  const isUp = incidents ? incidents.end[incidents.end.length - 1] === null : false
+  const hasData = (incidents ? incidents.length : 0) > 0 || latencies.length > 0
+  const isUp = incidents ? incidents[incidents.length - 1].end === null : false
 
   return (
     <div class="detail-wrap">
