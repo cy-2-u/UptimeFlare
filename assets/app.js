@@ -150,6 +150,26 @@
           : '')
       bar.appendChild(tip)
 
+      // Keep the tooltip inside the viewport (the shell clips at its edges):
+      // measure on hover and shift the centered bubble when it would overflow.
+      bar.addEventListener('mouseenter', function () {
+        var tipEl = $('.tip', bar)
+        if (!tipEl) return
+        var barRect = bar.getBoundingClientRect()
+        var tipRect = tipEl.getBoundingClientRect()
+        var center = barRect.left + barRect.width / 2
+        var left = center - tipRect.width / 2
+        var right = center + tipRect.width / 2
+        var margin = 8
+        var shift = 0
+        if (left < margin) {
+          shift = margin - left
+        } else if (right > window.innerWidth - margin) {
+          shift = window.innerWidth - margin - right
+        }
+        tipEl.style.transform = 'translateX(calc(-50% + ' + shift.toFixed(1) + 'px))'
+      })
+
       if (day.downTime > 0) {
         bar.addEventListener('click', function () {
           openDayDialog(day, monitorName)

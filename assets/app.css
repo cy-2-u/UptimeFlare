@@ -324,7 +324,15 @@ main { max-width: 80rem; margin: 0 auto; padding: 0 1rem 4rem; }
   box-shadow: var(--shadow-card);
   transition: transform 0.3s ease, background 0.3s ease, box-shadow 0.3s ease;
 }
-.card:hover { transform: translateY(-2px); background: #fff; box-shadow: var(--shadow-hover); }
+.card:hover {
+  transform: translateY(-2px);
+  background: #fff;
+  box-shadow: var(--shadow-hover);
+  /* Rise above sibling cards while hovered: the tooltip extends past the
+     card edge, and later siblings (backdrop-filter = own stacking context)
+     would otherwise paint over it. */
+  z-index: 10;
+}
 
 .card-preview { overflow: hidden; border: 1px solid rgba(148, 163, 184, 0.3); border-radius: 1.15rem; background: #f1f5f9; }
 .card-chrome {
