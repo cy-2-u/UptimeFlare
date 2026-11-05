@@ -116,6 +116,7 @@ main { max-width: 80rem; margin: 0 auto; padding: 0 1rem 4rem; }
   height: 2.5rem;
   padding: 0 1rem;
   border: 1px solid transparent;
+  white-space: nowrap;
   transition: all 0.2s ease;
   cursor: pointer;
 }
@@ -683,6 +684,8 @@ dialog.dlg::backdrop { background: rgba(15, 23, 42, 0.3); backdrop-filter: blur(
 @media (min-width: 640px) { .field-row { grid-template-columns: 1fr 1fr; } }
 .field .hint { display: block; margin-top: 0.5rem; font-size: 12px; color: var(--muted); }
 .form-actions { display: flex; gap: 0.5rem; padding-top: 4px; }
+/* Submit grows to fill, the cancel button keeps its natural width. */
+.form-actions > button:first-child { flex: 1; }
 .form-message {
   display: none;
   padding: 12px 16px;

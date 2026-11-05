@@ -106,7 +106,7 @@ export function ManagePage(props: { monitors: MonitorTarget[] }) {
               </label>
 
               <div class="form-actions">
-                <button type="submit" class="btn primary wide" data-submit>
+                <button type="submit" class="btn primary" data-submit>
                   保存站点
                 </button>
                 <button type="button" class="btn ghost hidden" data-cancel-edit>
