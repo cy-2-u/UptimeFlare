@@ -56,8 +56,7 @@ export function Layout(props: {
           <main>{props.children}</main>
           <footer class="footer">
             <p>
-              &copy; {new Date().getFullYear()} {props.pageConfig.title || '服务状态'} · 每 10
-              分钟自动检查
+              &copy; {new Date().getFullYear()} {props.pageConfig.title || '服务状态'} · 持续监测
             </p>
             <div class="footer-links">
               {(props.pageConfig.links || []).map((link) => (

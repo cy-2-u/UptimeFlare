@@ -469,6 +469,7 @@ app.get('/m/:id', async (c) => {
     latency: state.latency[id] ?? [],
     startedAt: state.startedAt?.[id],
     lastUpdate: meta.lastUpdate,
+    maintenances,
   }).replace(/</g, '\\u003c')
 
   return c.html(

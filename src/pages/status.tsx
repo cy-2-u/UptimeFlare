@@ -56,6 +56,21 @@ export function StatusPage(props: StatusPageProps) {
   const { monitors, state, bootstrap } = props
   const total = bootstrap.overallUp + bootstrap.overallDown
 
+  // Server-painted overall banner (timezone-free), so there is no "loading"
+  // flash; the client runtime repaints the same strings on its tick.
+  const overall =
+    bootstrap.overallUp === 0 && bootstrap.overallDown === 0
+      ? { tone: '', icon: '⏳', label: '暂无监测数据' }
+      : bootstrap.overallUp === 0
+        ? { tone: 'bad', icon: '✖', label: '全部服务不可用' }
+        : bootstrap.overallDown === 0
+          ? { tone: 'ok', icon: '✔', label: '全部服务运行正常' }
+          : {
+              tone: 'warn',
+              icon: '⚠',
+              label: `${bootstrap.overallDown} / ${total} 个服务出现故障`,
+            }
+
   const groups: { name: string; monitors: MonitorTarget[] }[] = []
   const grouped = new Set<string>()
   // Static config groups keep their order via the monitor.group field.
@@ -75,13 +90,16 @@ export function StatusPage(props: StatusPageProps) {
       <section class="hero">
         <div class="hero-left hero-enter">
           <div class="pulse-chip">
-            <span class="pulse-dot" data-overall-dot />
-            <span>每 10 分钟检查一轮</span>
+            <span
+              class={`pulse-dot${overall.tone ? ' ' + overall.tone : ''}`}
+              data-overall-dot
+            />
+            <span>持续监测中</span>
           </div>
           <h1 class="hero-title">{props.pageConfigTitle || '服务状态'}</h1>
-          <div class={`overall ${bootstrap.overallDown === 0 ? 'ok' : bootstrap.overallUp === 0 ? 'bad' : 'warn'}`}>
-            <span data-overall-icon>⏳</span>
-            <span data-overall-text>加载中…</span>
+          <div class={`overall${overall.tone ? ' ' + overall.tone : ''}`}>
+            <span data-overall-icon>{overall.icon}</span>
+            <span data-overall-text>{overall.label}</span>
           </div>
           <div class="hero-actions">
             <button type="button" class="btn ghost" data-open-incidents>

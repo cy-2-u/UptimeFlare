@@ -39,13 +39,14 @@ export function ManagePage(props: { monitors: MonitorTarget[] }) {
                       type="button"
                       class="chevron-btn"
                       aria-label="展开分组建议"
+                      aria-expanded="false"
                       data-group-toggle
                     >
                       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M3.5 6l4.5 4.5L12.5 6" />
                       </svg>
                     </button>
-                    <ul class="suggest" data-group-suggest />
+                    <ul class="suggest" data-group-suggest hidden />
                   </div>
                 </label>
                 <label class="field">
@@ -54,7 +55,7 @@ export function ManagePage(props: { monitors: MonitorTarget[] }) {
                     <button type="button" class="dropdown" data-dropdown="interval">
                       <span data-dropdown-label>10 分钟</span>
                     </button>
-                    <ul class="menu" data-menu="interval" />
+                    <ul class="menu" data-menu="interval" hidden />
                   </div>
                 </label>
               </div>
@@ -65,12 +66,13 @@ export function ManagePage(props: { monitors: MonitorTarget[] }) {
                     <button type="button" class="dropdown" data-dropdown="timeout">
                       <span data-dropdown-label>5 秒</span>
                     </button>
-                    <ul class="menu" data-menu="timeout" />
+                    <ul class="menu" data-menu="timeout" hidden />
                   </div>
                 </label>
                 <label class="field">
                   <span>封面图 URL</span>
                   <input name="preview" placeholder="留空自动生成" inputmode="url" />
+                  <span class="hint">可粘贴图床地址；留空时自动使用 image.thum.io 生成网站截图。</span>
                 </label>
               </div>
               <label class="field">

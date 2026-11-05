@@ -121,7 +121,7 @@
     return stats
   }
 
-  function renderBars(container, incidents, startedAt, nowSec, days) {
+  function renderBars(container, incidents, startedAt, nowSec, days, monitorName) {
     if (!container) return
     container.textContent = ''
     var stats = computeDayStats(incidents, startedAt, nowSec, days)
@@ -145,7 +145,7 @@
 
       if (day.downTime > 0) {
         bar.addEventListener('click', function () {
-          openDayDialog(day)
+          openDayDialog(day, monitorName)
         })
       }
       container.appendChild(bar)
@@ -157,8 +157,10 @@
   // ---- single-day incident dialog ------------------------------------------------
 
   var dayDialog = $('#day-dialog')
-  function openDayDialog(day) {
+  function openDayDialog(day, monitorName) {
     if (!dayDialog) return
+    $('[data-day-sub]', dayDialog).textContent = new Date(day.dayStart * 1000).toLocaleDateString()
+    $('[data-day-title]', dayDialog).textContent = (monitorName ? monitorName + ' · ' : '') + '当日故障'
     var body = $('[data-day-body]', dayDialog)
     body.textContent = ''
 
@@ -395,6 +397,7 @@
   function initStatusPage(bootstrap) {
     var overallUp = bootstrap.overallUp
     var overallDown = bootstrap.overallDown
+    var lastUpdateSec = bootstrap.lastUpdate || 0
 
     function paintOverall() {
       var text = $('[data-overall-text]')
@@ -418,19 +421,28 @@
         glyph = '⚠'
       }
       if (text) text.textContent = label
-      var toneClass = tone ? ' overall ' + tone : ' overall'
-      if (text && text.parentElement) text.parentElement.className = toneClass
+      if (text && text.parentElement) {
+        text.parentElement.className = 'overall' + (tone ? ' ' + tone : '')
+      }
       if (dot) dot.className = 'pulse-dot' + (tone === 'bad' ? ' bad' : tone === 'warn' ? ' warn' : '')
       icon.forEach(function (el) {
         el.textContent = glyph
       })
       if (up) up.textContent = overallUp
       var updated = $('[data-updated-at]')
-      if (updated && bootstrap.lastUpdate) {
-        updated.textContent = new Date(bootstrap.lastUpdate * 1000).toLocaleString('zh-CN', {
+      if (updated && lastUpdateSec) {
+        updated.textContent = new Date(lastUpdateSec * 1000).toLocaleString('zh-CN', {
           hour12: false,
         })
       }
+    }
+
+    // Keep the per-card "x 前" labels ticking between data polls.
+    function paintAgo() {
+      if (!lastUpdateSec) return
+      $$('[data-ago]').forEach(function (el) {
+        el.textContent = fmtAgo(lastUpdateSec) + '前'
+      })
     }
 
     bootstrap.monitors.forEach(function (monitor) {
@@ -442,7 +454,8 @@
         incidents,
         (bootstrap.startedAt || {})[monitor.id],
         Math.floor(Date.now() / 1000),
-        30
+        30,
+        monitor.name
       )
       var totalMonitorTime = 0
       var totalDownTime = 0
@@ -516,7 +529,11 @@
     }
 
     paintOverall()
-    setInterval(paintOverall, 30_000)
+    paintAgo()
+    setInterval(function () {
+      paintOverall()
+      paintAgo()
+    }, 30_000)
 
     var openHistory = $('[data-open-incidents]')
     if (openHistory) {
@@ -533,6 +550,7 @@
         var data = await res.json()
         overallUp = data.up
         overallDown = data.down
+        lastUpdateSec = data.updatedAt || lastUpdateSec
         paintOverall()
         data.monitors &&
           Object.keys(data.monitors).forEach(function (id) {
@@ -559,12 +577,32 @@
     var latencies = bootstrap.latency || []
     var nowSec = Math.floor(Date.now() / 1000)
 
+    // Maintenance override for the status badge (same rule as the cards).
+    var inMaintenance = (bootstrap.maintenances || []).some(function (m) {
+      var t = Date.now()
+      return (
+        t >= new Date(m.start).getTime() &&
+        (!m.end || t <= new Date(m.end).getTime()) &&
+        (m.monitors || []).indexOf(monitor.id) !== -1
+      )
+    })
+    if (inMaintenance) {
+      var statusBadge = $('[data-detail-status]')
+      if (statusBadge) statusBadge.textContent = '维护中'
+      var icon = $('[data-detail-icon]')
+      if (icon) {
+        icon.textContent = '⚠'
+        icon.classList.add('warn')
+      }
+    }
+
     var stats = renderBars(
       $('[data-bars]'),
       incidents,
       bootstrap.startedAt,
       nowSec,
-      90
+      90,
+      monitor.name
     )
     var totalMonitorTime = 0
     var totalDownTime = 0
@@ -617,9 +655,59 @@
         '<path d="' + line + ' L' + (width - padX) + ',' + (height - padBottom) +
         ' L' + padX + ',' + (height - padBottom) + ' Z" fill="url(#sg)"/>' +
         '<path d="' + line + '" fill="none" stroke="#0d9488" stroke-width="2" vector-effect="non-scaling-stroke"/>' +
+        '<g data-hover display="none">' +
+        '<line x1="0" x2="0" y1="' + padTop + '" y2="' + (height - padBottom) +
+        '" stroke="#0d9488" stroke-opacity="0.35" stroke-width="1" vector-effect="non-scaling-stroke"/>' +
+        '<circle r="4" fill="#0d9488" stroke="#fff" stroke-width="2"/>' +
+        '</g>' +
         '</svg>' +
+        '<div class="spark-tip" hidden></div>' +
         '<div style="position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-between;font-size:10px;color:#94a3b8">' +
         '<span>12 小时前</span><span>现在</span></div>'
+
+      // Hover: nearest-point crosshair + tooltip (ping / location / time).
+      var svg = $('svg', spark)
+      var hoverGroup = $('[data-hover]', spark)
+      var hoverLine = $('line', hoverGroup)
+      var hoverDot = $('circle', hoverGroup)
+      var tip = $('.spark-tip', spark)
+
+      svg.addEventListener('mousemove', function (event) {
+        var rect = svg.getBoundingClientRect()
+        var vx = ((event.clientX - rect.left) / rect.width) * width
+        var nearest = 0
+        var best = Infinity
+        latencies.forEach(function (p, i) {
+          var distance = Math.abs(x(p.time * 1000) - vx)
+          if (distance < best) {
+            best = distance
+            nearest = i
+          }
+        })
+        var point = latencies[nearest]
+        var cx = x(point.time * 1000)
+        var cy = y(point.ping)
+
+        hoverGroup.setAttribute('display', 'inline')
+        hoverLine.setAttribute('x1', cx)
+        hoverLine.setAttribute('x2', cx)
+        hoverDot.setAttribute('cx', cx)
+        hoverDot.setAttribute('cy', cy)
+
+        tip.hidden = false
+        tip.textContent = ''
+        tip.appendChild(document.createTextNode(point.ping + 'ms · ' + point.loc + ' '))
+        var time = document.createElement('span')
+        time.style.cssText = 'opacity:0.7;font-weight:400'
+        time.textContent = fmtTimeShort(point.time)
+        tip.appendChild(time)
+        tip.style.left = (cx / width) * 100 + '%'
+        tip.style.top = (cy / height) * 100 + '%'
+      })
+      svg.addEventListener('mouseleave', function () {
+        hoverGroup.setAttribute('display', 'none')
+        tip.hidden = true
+      })
     }
   }
 
@@ -642,20 +730,22 @@
       })
     }
 
+    // The popup stays in the DOM from SSR but must be [hidden] until opened —
+    // this is exactly what prevents "menus visible on page load".
     function setOpen(next) {
-      if (next && !open) {
+      if (next) {
         var rect = box.getBoundingClientRect()
         var menuHeight = Math.min(options.length * 44 + 12, 264)
         menu.classList.toggle('flip-up', rect.bottom + menuHeight > window.innerHeight && rect.top - menuHeight > 0)
       }
       open = next
       trigger.setAttribute('aria-expanded', String(open))
-      if (!open) menu.remove()
-      else box.appendChild(menu)
+      menu.hidden = !open
     }
 
     trigger.setAttribute('aria-haspopup', 'listbox')
     trigger.setAttribute('aria-expanded', 'false')
+    menu.hidden = true
     trigger.addEventListener('click', function () {
       setOpen(!open)
     })
@@ -731,6 +821,60 @@
       function () {}
     )
 
+    // Group suggestion popup (existing groups, filtered by input).
+    var groupBox = $('[data-group-box]', form)
+    var groupInput = $('[data-group-input]', form)
+    var groupToggle = $('[data-group-toggle]', form)
+    var groupSuggest = $('[data-group-suggest]', form)
+
+    function renderGroupSuggestions() {
+      var query = groupInput.value.trim().toLowerCase()
+      var suggestions = groups.filter(function (group) {
+        return (
+          group !== groupInput.value.trim() &&
+          (query === '' || group.toLowerCase().indexOf(query) !== -1)
+        )
+      })
+      groupSuggest.textContent = ''
+      suggestions.forEach(function (group) {
+        var li = document.createElement('li')
+        var button = document.createElement('button')
+        button.type = 'button'
+        var name = document.createElement('span')
+        name.textContent = group
+        var tag = document.createElement('span')
+        tag.style.cssText = 'color:#94a3b8;font-size:12px'
+        tag.textContent = '已有分组'
+        button.appendChild(name)
+        button.appendChild(tag)
+        button.addEventListener('click', function () {
+          groupInput.value = group
+          groupSuggest.hidden = true
+          groupToggle.setAttribute('aria-expanded', 'false')
+        })
+        li.appendChild(button)
+        groupSuggest.appendChild(li)
+      })
+      groupSuggest.hidden = suggestions.length === 0
+    }
+    function setGroupSuggestOpen(open) {
+      groupToggle.setAttribute('aria-expanded', String(open))
+      if (open) renderGroupSuggestions()
+      else groupSuggest.hidden = true
+    }
+    groupInput.addEventListener('focus', function () {
+      setGroupSuggestOpen(true)
+    })
+    groupInput.addEventListener('input', function () {
+      setGroupSuggestOpen(true)
+    })
+    groupToggle.addEventListener('click', function () {
+      setGroupSuggestOpen(groupSuggest.hidden)
+    })
+    document.addEventListener('mousedown', function (event) {
+      if (!groupBox.contains(event.target)) setGroupSuggestOpen(false)
+    })
+
     function setMessage(text) {
       message.textContent = text || ''
       message.classList.toggle('show', Boolean(text))
@@ -747,10 +891,19 @@
       })
     }
 
+    // Leave edit mode AND restore pristine defaults (form fields + dropdowns).
+    function clearEditMode() {
+      setEditing('')
+      form.reset()
+      intervalDropdown.value = 10
+      timeoutDropdown.value = 5
+      setMessage('')
+    }
+
     $$('[data-edit]').forEach(function (button) {
       button.addEventListener('click', function () {
         if (editingId === button.dataset.edit) {
-          setEditing('')
+          clearEditMode()
           return
         }
         setEditing(button.dataset.edit)
@@ -767,9 +920,7 @@
       })
     })
     cancelButton.addEventListener('click', function () {
-      setEditing('')
-      form.reset()
-      setMessage('')
+      clearEditMode()
     })
 
     form.addEventListener('submit', async function (event) {
