@@ -1,5 +1,4 @@
 import type { MonitorTarget, RuntimeBindings } from './types'
-import { workerConfig } from './config'
 
 export class SchedulerError extends Error {
   constructor(
@@ -58,15 +57,6 @@ export async function getStoredMonitors(
 
 export function clearMonitorsCache() {
   cacheStore.__uptimeMonitorsCache = undefined
-}
-
-// Full monitor list: static config first (in order), then page-managed.
-export async function getEffectiveMonitors(
-  env: RuntimeBindings,
-  monitors?: MonitorTarget[]
-): Promise<MonitorTarget[]> {
-  const stored = monitors ?? (await getStoredMonitors(env))
-  return [...workerConfig.monitors, ...stored]
 }
 
 // --- validation ---------------------------------------------------------------
@@ -162,15 +152,12 @@ export function parseNewMonitor(input: unknown): MonitorTarget {
   return {
     id,
     name,
-    method: 'GET',
     target: url.toString(),
     statusPageLink: validatedLink ?? url.toString(),
     preview: validatedPreview,
     group,
-    expectedCodes: [200],
     timeout,
     intervalMinutes,
-    hideLatencyChart: false,
   }
 }
 

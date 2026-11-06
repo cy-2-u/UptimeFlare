@@ -5,9 +5,6 @@ import {
   incidentKey,
   latencyKey,
   appendLatencyPoint,
-  assembleCompactedState,
-  uncompact,
-  emptyMeta,
   emptyLatencyRow,
 } from '../src/state-format'
 import {
@@ -98,34 +95,6 @@ test('deleteRows removes exactly the requested keys', async () => {
 
   assert.equal(db.rows.has(latencyKey('a')), false)
   assert.equal(db.rows.has(latencyKey('b')), true)
-})
-
-test('assemble + uncompact round-trip preserves incidents and latency', () => {
-  const meta = { lastUpdate: T0, overallUp: 1, overallDown: 0 }
-  const latRow = emptyLatencyRow(100)
-  const incident = { start: [[100]], end: [200], error: [['blip']] }
-
-  appendLatencyPoint(latRow, { time: 100, ping: 42, loc: 'HKG' })
-
-  const compacted = JSON.parse(
-    assembleCompactedState(meta, { a: incident }, { a: latRow })
-  )
-  const state = uncompact(compacted)
-
-  assert.equal(state.lastUpdate, T0)
-  assert.equal(state.startedAt?.a, 100)
-  assert.equal(state.incident.a[0].start[0], 100)
-  assert.equal(state.incident.a[0].end, 200)
-  assert.equal(state.latency.a[0].ping, 42)
-  assert.equal(state.latency.a[0].loc, 'HKG')
-})
-
-test('assemble skips empty rows and drops empty startedAt', () => {
-  const compacted = JSON.parse(
-    assembleCompactedState(emptyMeta(), { a: { start: [], end: [], error: [] } }, {})
-  )
-  assert.equal(Object.keys(compacted.incident).length, 0)
-  assert.equal(compacted.startedAt, undefined)
 })
 
 const T0 = 1_700_000_000

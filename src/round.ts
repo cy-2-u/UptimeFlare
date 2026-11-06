@@ -12,7 +12,7 @@ import {
   type RowChange,
 } from './store'
 import { incidentKey, latencyKey, type IncidentRow, type LatencyRow } from './state-format'
-import { getEffectiveMonitors } from './monitors'
+import { getStoredMonitors } from './monitors'
 import { getWorkerLocation } from './util'
 
 const MONITOR_CHECK_CONCURRENCY = 4
@@ -23,7 +23,7 @@ const MONITOR_CHECK_CONCURRENCY = 4
 // Monitors whose per-monitor interval has not elapsed are skipped entirely —
 // their rows stay untouched and cost zero writes.
 export async function runChecks(env: RuntimeEnv, authoritativeMonitors?: MonitorTarget[]): Promise<void> {
-  const monitors = await getEffectiveMonitors(env, authoritativeMonitors)
+  const monitors = authoritativeMonitors ?? (await getStoredMonitors(env))
   if (monitors.length === 0) {
     console.log('No monitors configured, skipping scheduled check.')
     return

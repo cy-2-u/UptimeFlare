@@ -75,12 +75,10 @@ export function DetailPage(props: {
             <div class="bars wide" data-bars />
           </section>
 
-          {!monitor.hideLatencyChart && (
-            <section>
-              <h3 class="sec-title">响应时间（近 12 小时）</h3>
-              <div class="sparkline" data-sparkline />
-            </section>
-          )}
+          <section>
+            <h3 class="sec-title">响应时间（近 12 小时）</h3>
+            <div class="sparkline" data-sparkline />
+          </section>
         </article>
       ) : (
         <article class="detail-card">

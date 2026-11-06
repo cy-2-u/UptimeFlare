@@ -32,14 +32,6 @@ export const fetchTimeout = (
   return promise.finally(() => clearTimeout(timeout))
 }
 
-export function withTimeout<T>(millis: number, promise: Promise<T>): Promise<T> {
-  const timeout = new Promise<T>((resolve, reject) =>
-    setTimeout(() => reject(new Error(`Promise timed out after ${millis}ms`)), millis)
-  )
-
-  return Promise.race([promise, timeout])
-}
-
 // Serialize overlapping runs/mutations inside one Durable Object.
 export class RunCoordinator {
   private pending: Promise<void> | null = null

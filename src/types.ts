@@ -10,7 +10,6 @@ export type PageConfigLink = { link: string; label: string }
 export type PageConfig = {
   title?: string
   links?: PageConfigLink[]
-  group?: { [key: string]: string[] }
   favicon?: string
   customFooter?: string
 }
@@ -27,19 +26,12 @@ export type MaintenanceConfig = {
 export type MonitorTarget = {
   id: string
   name: string
-  method: string
   target: string
   tooltip?: string
   statusPageLink?: string
   preview?: string
   group?: string
-  hideLatencyChart?: boolean
-  expectedCodes?: number[]
   timeout?: number
-  headers?: { [key: string]: string | number }
-  body?: string
-  responseKeyword?: string
-  responseForbiddenKeyword?: string
   // Per-monitor check cadence. The scheduler ticks every 10 minutes and
   // checks a monitor only when its interval elapsed, so any multiple of 10
   // (10/20/30/60) is free — skipped rounds cost nothing.
@@ -54,7 +46,6 @@ export type Notification = {
 }
 
 export type WorkerConfig = {
-  monitors: MonitorTarget[]
   notification?: Notification
 }
 
@@ -83,26 +74,5 @@ export type MonitorState = {
   overallDown: number
   incident: Record<string, IncidentRecord[]>
   latency: Record<string, LatencyRecord[]>
-  startedAt?: Record<string, number>
-}
-
-// Compact columnar format: ~3.5x faster parse/stringify and 40-60% smaller
-// than the record-based shape (upstream benchmarks).
-export type MonitorStateCompacted = {
-  lastUpdate: number
-  overallUp: number
-  overallDown: number
-  incident: Record<
-    string,
-    { start: number[][]; end: (number | null)[]; error: string[][] }
-  >
-  latency: Record<
-    string,
-    {
-      loc: { v: string[]; c: number[] }
-      time: string // hex encoded little-endian Uint32Array
-      ping: string // hex encoded little-endian Uint16Array
-    }
-  >
   startedAt?: Record<string, number>
 }

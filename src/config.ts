@@ -4,13 +4,9 @@ const pageConfig: PageConfig = {
   title: '服务状态',
   links: [],
   favicon: '/favicon.svg',
-  group: {
-    核心服务: [],
-  },
 }
 
 const workerConfig: WorkerConfig = {
-  monitors: [],
   notification: {
     timeZone: 'Asia/Shanghai',
   },

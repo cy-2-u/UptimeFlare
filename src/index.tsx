@@ -5,7 +5,6 @@ import { maintenances, pageConfig } from './config'
 import { decodeLatency, emptyMeta, lastLatencyPoint, latencyKey, type MetaRow } from './state-format'
 import {
   clearMonitorsCache,
-  getEffectiveMonitors,
   getStoredMonitors,
   mergeMonitorUpdate,
   parseNewMonitor,
@@ -114,11 +113,9 @@ function sanitizeMonitors(monitors: MonitorTarget[]) {
   return monitors.map((monitor) => ({
     id: monitor.id,
     name: monitor.name,
-    method: monitor.method,
     target: monitor.target,
     ...(monitor.tooltip ? { tooltip: monitor.tooltip } : {}),
     ...(monitor.statusPageLink ? { statusPageLink: monitor.statusPageLink } : {}),
-    ...(monitor.hideLatencyChart ? { hideLatencyChart: true } : {}),
     ...(monitor.preview ? { preview: monitor.preview } : {}),
     ...(monitor.group ? { group: monitor.group } : {}),
     ...(monitor.intervalMinutes ? { intervalMinutes: monitor.intervalMinutes } : {}),
@@ -147,7 +144,7 @@ app.get('/health', async (c) => {
 
   let monitorCount = 0
   try {
-    monitorCount = (await getEffectiveMonitors(env)).length
+    monitorCount = (await getStoredMonitors(env)).length
   } catch (err) {
     console.log('Failed to read monitors for health: ' + err)
   }
@@ -208,7 +205,7 @@ app.get('/api/data', async (c) => {
   }
 
   const monitors: Record<string, unknown> = {}
-  for (const monitor of await getEffectiveMonitors(env)) {
+  for (const monitor of await getStoredMonitors(env)) {
     monitors[monitor.id] =
       summaries[monitor.id] ?? {
         up: null,
@@ -364,7 +361,7 @@ app.post('/api/admin', async (c) => {
 app.get('/api/monitors', async (c) => {
   if (!(await isAdminRequest(c.req.raw, c.env))) return json({ error: '需要管理员登录' }, 401)
   const stored = await getStoredMonitors(c.env, { fresh: true })
-  return json({ monitors: sanitizeMonitors(await getEffectiveMonitors(c.env)), stored })
+  return json({ monitors: sanitizeMonitors(await getStoredMonitors(c.env)), stored })
 })
 
 app.post('/api/monitors', async (c) => {
@@ -434,7 +431,7 @@ async function navIsAdmin(request: Request, env: Env['Bindings']): Promise<boole
 
 app.get('/', async (c) => {
   const env = c.env
-  const monitors = await getEffectiveMonitors(env)
+  const monitors = await getStoredMonitors(env)
   const { meta, state } = await readState(env)
 
   // Cards only display the latest latency; the full 12h arrays (sparkline
@@ -474,7 +471,7 @@ app.get('/', async (c) => {
 
 app.get('/m/:id', async (c) => {
   const id = c.req.param('id')
-  const monitors = await getEffectiveMonitors(c.env)
+  const monitors = await getStoredMonitors(c.env)
   const monitor = monitors.find((item) => item.id === id)
   if (!monitor) {
     return c.html(

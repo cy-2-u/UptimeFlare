@@ -1,5 +1,4 @@
 import type { MonitorTarget } from './types'
-import { workerConfig } from './config'
 import { META_KEY, incidentKey, latencyKey } from './state-format'
 import type { RuntimeEnv } from './types'
 import { SchedulerError } from './monitors'
@@ -82,7 +81,7 @@ export class SchedulerState {
   addMonitor(monitor: MonitorTarget): Promise<MonitorTarget[]> {
     return this.coordinator.mutate(async () => {
       const monitors = await this.readMonitors()
-      if ([...workerConfig.monitors, ...monitors].some((item) => item.id === monitor.id)) {
+      if (monitors.some((item) => item.id === monitor.id)) {
         throw new SchedulerError('监测 ID 已存在，请换一个名称或 ID', 409)
       }
       await this.finishDeletes()

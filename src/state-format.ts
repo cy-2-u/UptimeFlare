@@ -1,9 +1,4 @@
-import type {
-  IncidentRecord,
-  LatencyRecord,
-  MonitorState,
-  MonitorStateCompacted,
-} from './types'
+import type { IncidentRecord, LatencyRecord } from './types'
 
 // ---------------------------------------------------------------------------
 // D1 row layout (table `uptimeflare`, columns key/value):
@@ -187,81 +182,4 @@ export function pruneIncidents(row: IncidentRow, before: number): boolean {
     changed = true
   }
   return changed
-}
-
-// --- whole-state assembly (for the status page payload) ----------------------
-
-export function assembleCompactedState(
-  meta: MetaRow,
-  incidents: Record<string, IncidentRow | null>,
-  latencies: Record<string, LatencyRow | null>
-): string {
-  const state: MonitorStateCompacted = {
-    lastUpdate: meta.lastUpdate,
-    overallUp: meta.overallUp,
-    overallDown: meta.overallDown,
-    incident: {},
-    latency: {},
-    startedAt: {},
-  }
-
-  for (const [id, row] of Object.entries(latencies)) {
-    if (!row) continue
-    state.latency[id] = { time: row.time, ping: row.ping, loc: row.loc }
-    if (row.startedAt > 0) state.startedAt![id] = row.startedAt
-  }
-
-  for (const [id, row] of Object.entries(incidents)) {
-    if (!row || row.start.length === 0) continue
-    state.incident[id] = row
-  }
-
-  if (Object.keys(state.startedAt!).length === 0) {
-    delete state.startedAt
-  }
-
-  return JSON.stringify(state)
-}
-
-export function parseCompacted(compactedStr: string | null): MonitorStateCompacted | null {
-  if (compactedStr === null) return null
-  return JSON.parse(compactedStr) as MonitorStateCompacted
-}
-
-// Client-side expansion of the compacted payload into render-friendly records.
-export function uncompact(compacted: MonitorStateCompacted): MonitorState {
-  const state: MonitorState = {
-    lastUpdate: compacted.lastUpdate,
-    overallUp: compacted.overallUp,
-    overallDown: compacted.overallDown,
-    incident: {},
-    latency: {},
-    startedAt: compacted.startedAt ? { ...compacted.startedAt } : undefined,
-  }
-
-  Object.keys(compacted.incident).forEach((monitorId) => {
-    state.incident[monitorId] = []
-    const incidents = compacted.incident[monitorId]
-
-    if (
-      incidents.start.length !== incidents.end.length ||
-      incidents.start.length !== incidents.error.length
-    ) {
-      throw new Error('Inconsistent incident data lengths.')
-    }
-
-    for (let i = 0; i < incidents.start.length; i++) {
-      state.incident[monitorId].push({
-        start: incidents.start[i],
-        end: incidents.end[i],
-        error: incidents.error[i],
-      })
-    }
-  })
-
-  Object.keys(compacted.latency).forEach((monitorId) => {
-    state.latency[monitorId] = decodeLatency(compacted.latency[monitorId])
-  })
-
-  return state
 }

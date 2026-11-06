@@ -161,7 +161,6 @@ export function makeMonitor(partial: Partial<MonitorTarget> = {}): MonitorTarget
   return {
     id: 'example-com',
     name: 'Example',
-    method: 'GET',
     target: 'https://example.com',
     timeout: 4500,
     ...partial,
