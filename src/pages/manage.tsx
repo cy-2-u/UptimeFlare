@@ -124,14 +124,12 @@ export function ManagePage(props: { monitors: MonitorTarget[] }) {
                 <label class="field">
                   <span>封面图 URL</span>
                   <input name="preview" placeholder="留空自动生成" inputmode="url" />
-                  <span class="hint">可粘贴图床地址；留空时自动使用 image.thum.io 生成网站截图。</span>
                 </label>
               </div>
 
               <label class="field">
                 <span>访问链接</span>
                 <input name="statusPageLink" placeholder="留空使用网站地址" inputmode="url" />
-                <span class="hint">状态卡封面点击后打开的地址。</span>
               </label>
 
               <div class="form-actions">

@@ -482,8 +482,8 @@ dialog.dlg::backdrop { background: rgba(15, 23, 42, 0.3); backdrop-filter: blur(
 .dlg-close:hover { background: #f1f5f9; color: var(--ink); }
 .dlg-body { padding: 1.25rem 1.5rem 1.5rem; display: flex; flex-direction: column; gap: 0.75rem; }
 
-.dlg-toolbar { display: flex; gap: 0.75rem; align-items: center; }
-.dlg-toolbar select { flex: 1; }
+.dlg-toolbar { display: flex; gap: 0.75rem; align-items: center; justify-content: center; }
+.dlg-toolbar .relative { width: 16rem; max-width: 100%; }
 .dlg-month { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.75rem; }
 .dlg-month strong { font-size: 17px; }
 
@@ -653,7 +653,6 @@ dialog.dlg::backdrop { background: rgba(15, 23, 42, 0.3); backdrop-filter: blur(
 .field input:focus { border-color: var(--faint); background: #fff; }
 .field-row { display: grid; gap: 1rem; }
 @media (min-width: 640px) { .field-row { grid-template-columns: 1fr 1fr; } }
-.field .hint { display: block; margin-top: 0.5rem; font-size: 12px; color: var(--muted); }
 
 .form-actions { display: flex; gap: 0.5rem; padding-top: 4px; }
 .form-actions > button:first-child { flex: 1; }
