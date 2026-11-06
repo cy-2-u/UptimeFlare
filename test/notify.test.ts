@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { buildNotificationMessage, buildPushUrl } from '../src/notify'
 import type { MonitorTarget } from '../src/types'
 
-const monitor = { id: 'm1', name: '主站', method: 'GET', target: 'https://example.com' } as MonitorTarget
+const monitor = { id: 'm1', name: '主站', target: 'https://example.com' } as MonitorTarget
 
 const base = {
   monitor,

@@ -14,8 +14,7 @@ export async function getWorkerLocation(request?: Request): Promise<string | und
   if (cachedColo) return cachedColo
 
   const res = await fetch('https://cloudflare.com/cdn-cgi/trace')
-  const text = await res.text()
-  const colo = /^colo=(.*)$/m.exec(text)?.[1]
+  const colo = /^colo=(.*)$/m.exec(await res.text())?.[1]
   if (colo) cachedColo = colo
   return colo
 }
@@ -23,13 +22,11 @@ export async function getWorkerLocation(request?: Request): Promise<string | und
 export const fetchTimeout = (
   url: string,
   ms: number,
-  { signal, ...options }: RequestInit<RequestInitCfProperties> | undefined = {}
+  options: RequestInit<RequestInitCfProperties> = {}
 ): Promise<Response> => {
   const controller = new AbortController()
-  const promise = fetch(url, { signal: controller.signal, ...options })
-  if (signal) signal.addEventListener('abort', () => controller.abort())
   const timeout = setTimeout(() => controller.abort(), ms)
-  return promise.finally(() => clearTimeout(timeout))
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timeout))
 }
 
 // Serialize overlapping runs/mutations inside one Durable Object.

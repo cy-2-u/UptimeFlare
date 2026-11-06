@@ -2,7 +2,7 @@ import type { MonitorTarget } from '../src/types'
 
 // ---------------------------------------------------------------------------
 // Minimal in-memory fakes for the D1 row store and Durable Object storage.
-// The D1 fake reproduces the exact SQL shapes used by src/store.ts, including
+// The D1 fake reproduces the exact SQL shapes used by src/state.ts, including
 // atomic batch semantics and compare-and-set behaviour.
 // ---------------------------------------------------------------------------
 

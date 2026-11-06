@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { SchedulerState } from '../src/scheduler'
-import { META_KEY, latencyKey, incidentKey } from '../src/state-format'
+import { META_KEY, latencyKey, incidentKey } from '../src/state'
 import type { RuntimeEnv } from '../src/types'
 import { FakeD1, FakeStorage, makeFakeD1, makeMonitor } from './fakes'
 

@@ -19,67 +19,35 @@ export type CheckOutcome = {
   status: { ping: number; up: boolean; err: string }
 }
 
-function httpResponseBasicCheck(code: number): string | null {
-  if (code < 200 || code > 299) {
-    return `Expected codes: 2xx, Got: ${code}`
-  }
-  return null
-}
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-export async function getStatus(
-  monitor: MonitorTarget
-): Promise<{ ping: number; up: boolean; err: string }> {
-  let status = {
-    ping: 0,
-    up: false,
-    err: 'Unknown',
-  }
-
+export async function getStatus(monitor: MonitorTarget): Promise<CheckOutcome['status']> {
   const startTime = Date.now()
-
   try {
-    const headers = new Headers()
-    headers.set('user-agent', 'ServiceStatus/1.0')
-
-    const response = await fetchTimeout(
-      monitor.target,
-      monitor.timeout || DEFAULT_MONITOR_TIMEOUT_MS,
-      {
-        method: 'GET',
-        headers: headers,
-        cf: {
-          // Never let Cloudflare cache a monitored endpoint
-          cacheTtlByStatus: { '100-599': -1 },
-        },
-      }
-    )
+    const headers = new Headers({ 'user-agent': 'ServiceStatus/1.0' })
+    const response = await fetchTimeout(monitor.target, monitor.timeout || DEFAULT_MONITOR_TIMEOUT_MS, {
+      method: 'GET',
+      headers,
+      cf: { cacheTtlByStatus: { '100-599': -1 } }, // never let CF cache a monitored endpoint
+    })
 
     console.log(`${monitor.name} responded with ${response.status}`)
-    status.ping = Date.now() - startTime
-
-    const err = httpResponseBasicCheck(response.status)
+    const ping = Date.now() - startTime
+    const err = response.status < 200 || response.status > 299 ? `Expected codes: 2xx, Got: ${response.status}` : null
     try {
-      await response.body?.cancel()
-    } catch (e) {} // Always try to cancel the body (upstream issue #166)
+      await response.body?.cancel() // upstream issue #166
+    } catch {}
 
-    if (err !== null) {
-      console.log(`${monitor.name} didn't pass response check: ${err}`)
-    }
-    status.up = err === null
-    status.err = err ?? ''
+    if (err) console.log(`${monitor.name} didn't pass response check: ${err}`)
+    return { ping, up: err === null, err: err ?? '' }
   } catch (e: any) {
     console.log(`${monitor.name} errored with ${e.name}: ${e.message}`)
     if (e.name === 'AbortError') {
-      status.ping = monitor.timeout || DEFAULT_MONITOR_TIMEOUT_MS
-      status.up = false
-      status.err = `Timeout after ${status.ping}ms`
-    } else {
-      status.up = false
-      status.err = (e.name + ': ' + e.message).slice(0, MAX_ERROR_LENGTH)
+      const ping = monitor.timeout || DEFAULT_MONITOR_TIMEOUT_MS
+      return { ping, up: false, err: `Timeout after ${ping}ms` }
     }
+    return { ping: Date.now() - startTime, up: false, err: (e.name + ': ' + e.message).slice(0, MAX_ERROR_LENGTH) }
   }
-
-  return status
 }
 
 // Run one confirmed check. `checkLocation` describes where the check ran and
@@ -87,27 +55,20 @@ export async function getStatus(
 export async function checkMonitor(
   monitor: MonitorTarget,
   workerLocation: string
-): Promise<{ monitor: MonitorTarget; checkLocation: string; checkedAt: number; status: { ping: number; up: boolean; err: string } }> {
-  let lastResult: { ping: number; up: boolean; err: string } | null = null
+): Promise<CheckOutcome> {
+  let lastStatus: CheckOutcome['status'] | null = null
 
   for (let attempt = 1; attempt <= FAILURE_CONFIRMATION_ATTEMPTS; attempt += 1) {
     console.log(`[${workerLocation}] Checking ${monitor.name} (attempt ${attempt})...`)
     const status = await getStatus(monitor)
-    if (status.up) return { monitor, checkLocation: workerLocation, checkedAt: Math.round(Date.now() / 1000), status }
-    lastResult = status
-    if (attempt < FAILURE_CONFIRMATION_ATTEMPTS) {
-      await wait(FAILURE_RETRY_DELAY_MS)
+    if (status.up) {
+      return { monitor, checkLocation: workerLocation, checkedAt: now(), status }
     }
+    lastStatus = status
+    if (attempt < FAILURE_CONFIRMATION_ATTEMPTS) await wait(FAILURE_RETRY_DELAY_MS)
   }
 
-  return {
-    monitor,
-    checkLocation: workerLocation,
-    checkedAt: Math.round(Date.now() / 1000),
-    status: lastResult!,
-  }
+  return { monitor, checkLocation: workerLocation, checkedAt: now(), status: lastStatus! }
 }
 
-function wait(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
+const now = () => Math.round(Date.now() / 1000)

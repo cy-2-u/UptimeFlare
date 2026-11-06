@@ -16,3 +16,6 @@ worker-configuration.d.ts
 # misc
 .DS_Store
 *.log
+
+# local dev secrets
+.dev.vars

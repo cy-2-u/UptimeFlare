@@ -103,7 +103,7 @@ export function ManagePage(props: { monitors: MonitorTarget[] }) {
                       aria-haspopup="listbox"
                       aria-expanded="false"
                     >
-                      <span data-dropdown-label>5 秒</span>
+                      <span data-dropdown-label>3 秒</span>
                       <svg
                         class="chev"
                         viewBox="0 0 16 16"

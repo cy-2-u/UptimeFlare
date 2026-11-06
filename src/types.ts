@@ -1,9 +1,9 @@
-// Shared types. Row types describe the D1 layout (see state-format.ts).
+// Shared types. Row types live in state.ts (they describe the D1 layout).
 
 import type { MonitorScheduler } from './index'
-import type { IncidentRow } from './state-format'
+import type { IncidentRow, LatencyRow } from './state'
 
-export type { IncidentRow }
+export type { IncidentRow, LatencyRow }
 
 export type PageConfigLink = { link: string; label: string }
 
@@ -66,13 +66,4 @@ export type LatencyRecord = {
   loc: string
   ping: number
   time: number
-}
-
-export type MonitorState = {
-  lastUpdate: number
-  overallUp: number
-  overallDown: number
-  incident: Record<string, IncidentRecord[]>
-  latency: Record<string, LatencyRecord[]>
-  startedAt?: Record<string, number>
 }

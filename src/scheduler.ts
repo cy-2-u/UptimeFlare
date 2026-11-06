@@ -1,9 +1,7 @@
-import type { MonitorTarget } from './types'
-import { META_KEY, incidentKey, latencyKey } from './state-format'
-import type { RuntimeEnv } from './types'
+import type { MonitorTarget, RuntimeEnv } from './types'
+import { META_KEY, incidentKey, latencyKey, deleteRows, readValue } from './state'
 import { SchedulerError } from './monitors'
 import { RunCoordinator } from './util'
-import { deleteRows, readValue } from './store'
 
 const CHECK_INTERVAL_MS = 10 * 60 * 1000
 const STALE_AFTER_SEC = 25 * 60

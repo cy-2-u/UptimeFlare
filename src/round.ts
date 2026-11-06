@@ -2,18 +2,22 @@ import type { MonitorTarget, RuntimeEnv } from './types'
 import { workerConfig } from './config'
 import { checkMonitor, type CheckOutcome } from './checks'
 import { dispatchNotices } from './notify'
-import { applyRound, isMonitorDue } from './stateops'
+import { applyRound, isMonitorDue, type PendingNotice } from './stateops'
 import {
   changeFrom,
   commitChanges,
+  incidentKey,
+  latencyKey,
   parseIncidentRow,
   parseLatencyRow,
   readStateSnapshot,
-  type RowChange,
-} from './store'
-import { incidentKey, latencyKey, type IncidentRow, type LatencyRow } from './state-format'
+  type IncidentRow,
+  type LatencyRow,
+} from './state'
 import { getStoredMonitors } from './monitors'
 import { getWorkerLocation } from './util'
+
+export type { PendingNotice }
 
 const MONITOR_CHECK_CONCURRENCY = 4
 
@@ -73,7 +77,7 @@ export async function runChecks(env: RuntimeEnv, authoritativeMonitors?: Monitor
     now,
   })
 
-  const changes: RowChange[] = [changeFrom(snapshot.meta, JSON.stringify(meta))]
+  const changes = [changeFrom(snapshot.meta, JSON.stringify(meta))]
   for (const [id, row] of latChanged) {
     changes.push(
       changeFrom(snapshot.lat.get(id) ?? { key: latencyKey(id), value: null }, JSON.stringify(row))
@@ -92,4 +96,3 @@ export async function runChecks(env: RuntimeEnv, authoritativeMonitors?: Monitor
 
   await dispatchNotices(notices, workerConfig.notification)
 }
-

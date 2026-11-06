@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { applyRound, isMonitorDue, type CheckOutcome } from '../src/stateops'
-import { decodeLatency, type IncidentRow, type LatencyRow } from '../src/state-format'
+import { decodeLatency, type IncidentRow, type LatencyRow } from '../src/state'
 import type { MonitorTarget } from '../src/types'
 
 const T0 = 1_700_000_000

@@ -6,7 +6,7 @@ import {
   latencyKey,
   appendLatencyPoint,
   emptyLatencyRow,
-} from '../src/state-format'
+} from '../src/state'
 import {
   changeFrom,
   commitChanges,
@@ -15,7 +15,7 @@ import {
   readStateSnapshot,
   readValue,
   setRuntimeValue,
-} from '../src/store'
+} from '../src/state'
 import { FakeD1 } from './fakes'
 
 function fixture() {

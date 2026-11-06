@@ -17,10 +17,19 @@ const STATUS_LABEL: Record<string, string> = {
   pending: '等待检查',
 }
 
-function statusOf(monitor: MonitorTarget, incident: Record<string, IncidentRecord[]>) {
+function statusOf(
+  monitor: MonitorTarget,
+  incident: Record<string, IncidentRecord[]>,
+  lastStatus: Record<string, 'up' | 'down' | null>
+) {
   const incidents = incident[monitor.id]
-  if (!incidents || incidents.length === 0) return 'pending'
-  return incidents[incidents.length - 1].end === null ? 'down' : 'up'
+  // An open incident means down even if the latency row has not caught up.
+  if (incidents && incidents.length > 0 && incidents[incidents.length - 1].end === null) {
+    return 'down'
+  }
+  // Otherwise the check-round status is authoritative: null (never checked)
+  // renders as pending.
+  return lastStatus[monitor.id] === 'up' ? 'up' : lastStatus[monitor.id] === 'down' ? 'down' : 'pending'
 }
 
 function hostnameOf(target: string) {
@@ -43,6 +52,7 @@ export function StatusPage(props: {
   monitors: MonitorTarget[]
   state: {
     incident: Record<string, IncidentRecord[]>
+    lastStatus?: Record<string, 'up' | 'down' | null>
     startedAt?: Record<string, number>
   }
   bootstrap: StatusBootstrap
@@ -131,7 +141,7 @@ export function StatusPage(props: {
             </div>
             <div class="cards">
               {group.monitors.map((monitor) => {
-                const status = statusOf(monitor, props.state.incident)
+                const status = statusOf(monitor, props.state.incident, props.state.lastStatus ?? {})
                 const host = hostnameOf(monitor.target)
                 const preview =
                   monitor.preview ||

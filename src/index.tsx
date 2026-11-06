@@ -1,8 +1,21 @@
 import { Hono } from 'hono'
 import { DurableObject } from 'cloudflare:workers'
-import type { MonitorTarget } from './types'
+import type { IncidentRecord, LatencyRecord, MonitorTarget } from './types'
 import { maintenances, pageConfig } from './config'
-import { decodeLatency, emptyMeta, lastLatencyPoint, latencyKey, type MetaRow } from './state-format'
+import {
+  emptyMeta,
+  incidentsToRecords,
+  lastLatencyPoint,
+  latencyKey,
+  parseIncidentRow,
+  parseLatencyRow,
+  readLatencySnapshot,
+  readStateSnapshot,
+  readValue,
+  decodeLatency,
+  type MetaRow,
+  type LatencyRow,
+} from './state'
 import {
   clearMonitorsCache,
   getStoredMonitors,
@@ -11,8 +24,6 @@ import {
   schedulerMonitors,
   SchedulerError,
 } from './monitors'
-import { parseLatencyRow, readLatencySnapshot, readStateSnapshot, readValue } from './store'
-import { dispatchNotices } from './notify'
 import { SchedulerState } from './scheduler'
 import { runChecks } from './round'
 import { getWorkerLocation } from './util'
@@ -32,7 +43,6 @@ import { StatusPage } from './pages/status'
 import { DetailPage } from './pages/detail'
 import { ManagePage } from './pages/manage'
 import { LoginPage } from './pages/login'
-
 export type Env = {
   Bindings: {
     UPTIMEFLARE_D1?: D1Database
@@ -52,9 +62,8 @@ function json(data: unknown, status = 200, extraHeaders: Record<string, string> 
   })
 }
 
-function errorMessage(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback
-}
+const errorMessage = (error: unknown, fallback: string) =>
+  error instanceof Error ? error.message : fallback
 
 function getScheduler(env: Env['Bindings']) {
   const namespace = env.MONITOR_SCHEDULER_DO
@@ -62,16 +71,16 @@ function getScheduler(env: Env['Bindings']) {
   return namespace.get(namespace.idFromName('default'))
 }
 
-// Read meta + fully decoded per-monitor state for page rendering. Incidents
-// stay in the stored columnar shape (the client runtime reads them as-is).
-async function readState(env: Env['Bindings']): Promise<{
-  meta: MetaRow
-  state: {
-    incident: Record<string, import('./types').IncidentRecord[]>
-    latency: Record<string, import('./types').LatencyRecord[]>
-    startedAt?: Record<string, number>
-  }
-}> {
+type PageState = {
+  incident: Record<string, IncidentRecord[]>
+  latency: Record<string, LatencyRecord[]>
+  lastStatus: Record<string, 'up' | 'down' | null>
+  startedAt?: Record<string, number>
+}
+
+// Read meta + fully decoded per-monitor state for page rendering. The
+// columnar->record conversion happens here, once, server-side.
+async function readState(env: Env['Bindings']): Promise<{ meta: MetaRow; state: PageState }> {
   const snapshot = await readStateSnapshot(env)
 
   let meta: MetaRow = emptyMeta()
@@ -83,30 +92,33 @@ async function readState(env: Env['Bindings']): Promise<{
     }
   }
 
-  // Incidents are stored columnar for cheap D1 writes, but the page payload
-  // and client runtime consume plain IncidentRecord[] — convert here, once.
-  const incident: Record<string, import('./types').IncidentRecord[]> = {}
+  const incident: Record<string, IncidentRecord[]> = {}
   for (const [id, row] of snapshot.inc) {
-    if (row.value === null) continue
-    const incidents = JSON.parse(row.value) as import('./state-format').IncidentRow
-    if (incidents.start.length === 0) continue
-    incident[id] = incidents.start.map((starts, i) => ({
-      start: starts,
-      end: incidents.end[i],
-      error: incidents.error[i],
-    }))
+    try {
+      const parsed = parseIncidentRow(row)
+      // A corrupt row must not take the whole page down; skip and log.
+      if (parsed && parsed.start.length > 0) incident[id] = incidentsToRecords(parsed)
+    } catch (err) {
+      console.log(`Skipping unreadable incident row for ${id}: ` + err)
+    }
   }
 
-  const latency: Record<string, import('./types').LatencyRecord[]> = {}
+  const latency: Record<string, LatencyRecord[]> = {}
+  const lastStatus: Record<string, 'up' | 'down' | null> = {}
   const startedAt: Record<string, number> = {}
   for (const [id, row] of snapshot.lat) {
-    const parsed = parseLatencyRow(row)
-    if (!parsed || parsed.time === '') continue
-    latency[id] = decodeLatency(parsed)
-    if (parsed.startedAt > 0) startedAt[id] = parsed.startedAt
+    try {
+      const parsed = parseLatencyRow(row)
+      if (!parsed || parsed.time === '') continue
+      latency[id] = decodeLatency(parsed)
+      lastStatus[id] = parsed.lastStatus
+      if (parsed.startedAt > 0) startedAt[id] = parsed.startedAt
+    } catch (err) {
+      console.log(`Skipping unreadable latency row for ${id}: ` + err)
+    }
   }
 
-  return { meta, state: { incident, latency, startedAt } }
+  return { meta, state: { incident, latency, lastStatus, startedAt } }
 }
 
 function sanitizeMonitors(monitors: MonitorTarget[]) {
@@ -193,7 +205,7 @@ app.get('/api/data', async (c) => {
     { up: boolean | null; latency: number | null; location: string | null; message: string }
   > = {}
   for (const [id, row] of snapshot.lat) {
-    const parsed = row.value === null ? null : (JSON.parse(row.value) as import('./state-format').LatencyRow)
+    const parsed = row.value === null ? null : (JSON.parse(row.value) as LatencyRow)
     if (!parsed) continue
     const last = lastLatencyPoint(parsed)
     summaries[id] = {
@@ -249,33 +261,28 @@ app.get('/api/badge', async (c) => {
 
   try {
     const raw = await readValue(c.env, latencyKey(monitorId))
-    let isUp: boolean | null = null
-    if (raw !== null) {
-      const row = JSON.parse(raw) as { lastStatus: 'up' | 'down' | null }
-      isUp = row.lastStatus === null ? null : row.lastStatus === 'up'
+    const row = raw === null ? null : (JSON.parse(raw) as LatencyRow)
+    const isUp = row?.lastStatus === null || row === null ? null : row.lastStatus === 'up'
+
+    if (isUp === null) return badge('unknown', 'lightgrey')
+    if (isUp) {
+      const last = row ? lastLatencyPoint(row) : null
+      return badge(last?.ping ? `${last.ping} ms` : 'Up', BADGE_UP)
     }
-    return badge(
-      isUp === null
-        ? 'pending'
-        : isUp
-          ? url.searchParams.get('up') ?? 'UP'
-          : url.searchParams.get('down') ?? 'DOWN',
-      isUp === null
-        ? 'lightgrey'
-        : isUp
-          ? url.searchParams.get('colorUp') ?? 'brightgreen'
-          : url.searchParams.get('colorDown') ?? 'red'
-    )
+    return badge('Down', BADGE_DOWN)
   } catch (error) {
-    console.error('Error rendering badge API:', error)
+    console.log('Badge failed: ' + error)
     return badge('error', 'lightgrey', true)
   }
 })
 
-// Public status API (same-origin only, edge-cached 60s). The bundled client
-// polls /api/data for light updates; this endpoint serves the full state for
-// external consumers.
+const BADGE_UP = '#4c1'
+const BADGE_DOWN = '#e05d44'
+
 app.get('/api/status', async (c) => {
+  // Same-origin defense: browsers always send Origin/Referer on cross-site
+  // fetches; direct navigations and server clients are unaffected. This is a
+  // personal project — this is spam protection, not hardening.
   const host = c.req.header('host')
   const origin = c.req.header('origin')
   const referer = c.req.header('referer')
@@ -361,14 +368,14 @@ app.post('/api/admin', async (c) => {
 app.get('/api/monitors', async (c) => {
   if (!(await isAdminRequest(c.req.raw, c.env))) return json({ error: '需要管理员登录' }, 401)
   const stored = await getStoredMonitors(c.env, { fresh: true })
-  return json({ monitors: sanitizeMonitors(await getStoredMonitors(c.env)), stored })
+  return json({ monitors: sanitizeMonitors(stored), stored })
 })
 
 app.post('/api/monitors', async (c) => {
   if (!(await isAdminRequest(c.req.raw, c.env))) return json({ error: '需要管理员登录' }, 401)
   try {
     const monitor = parseNewMonitor(await c.req.json())
-    const authoritative = await schedulerMonitors(c.env, 'POST', monitor)
+    const authoritative = await schedulerMonitors(c.env, 'add', monitor)
     clearMonitorsCache()
     return json({ monitor, stored: authoritative }, 201)
   } catch (error: unknown) {
@@ -391,7 +398,7 @@ app.put('/api/monitors', async (c) => {
     if (!existing) return json({ error: '只能编辑在页面中添加的监测项' }, 404)
 
     const updated = mergeMonitorUpdate(existing, body)
-    const authoritative = await schedulerMonitors(c.env, 'PUT', updated)
+    const authoritative = await schedulerMonitors(c.env, 'update', updated)
     clearMonitorsCache()
     return json({ monitor: updated, stored: authoritative })
   } catch (error: unknown) {
@@ -408,7 +415,7 @@ app.delete('/api/monitors', async (c) => {
     const body = (await c.req.json()) as Record<string, unknown>
     const id = String(body.id ?? '').trim()
     if (!id) return json({ error: '缺少监测 ID' }, 400)
-    const nextMonitors = await schedulerMonitors(c.env, 'DELETE', { id })
+    const nextMonitors = await schedulerMonitors(c.env, 'delete', { id })
     clearMonitorsCache()
     return json({ stored: nextMonitors })
   } catch (error: unknown) {
@@ -556,6 +563,24 @@ export class MonitorScheduler extends DurableObject {
     this.scheduler = new SchedulerState(ctx.storage, env, (monitors) => runChecks(env, monitors))
   }
 
+  // Typed RPC surface (v4): the Worker calls stub.listMonitors() etc.
+  // directly — no fetch routing, no JSON envelope, no manual error mapping.
+  async listMonitors(): Promise<MonitorTarget[]> {
+    return this.scheduler.listMonitors()
+  }
+
+  async addMonitor(monitor: MonitorTarget): Promise<MonitorTarget[]> {
+    return this.scheduler.addMonitor(monitor)
+  }
+
+  async updateMonitor(monitor: MonitorTarget): Promise<MonitorTarget[]> {
+    return this.scheduler.updateMonitor(monitor)
+  }
+
+  async deleteMonitor(id: string): Promise<MonitorTarget[]> {
+    return this.scheduler.deleteMonitor(id)
+  }
+
   async ensureAlarm(): Promise<{ nextAlarm: number }> {
     return this.scheduler.ensureAlarm()
   }
@@ -570,35 +595,6 @@ export class MonitorScheduler extends DurableObject {
 
   async alarm(): Promise<void> {
     await this.scheduler.runNow()
-  }
-
-  async fetch(request: Request): Promise<Response> {
-    if (new URL(request.url).pathname !== '/monitors') {
-      return json({ error: 'not found' }, 404)
-    }
-    try {
-      if (request.method === 'GET') {
-        return json({ monitors: await this.scheduler.listMonitors() })
-      }
-      if (request.method === 'POST') {
-        return json({ monitors: await this.scheduler.addMonitor(await request.json<MonitorTarget>()) })
-      }
-      if (request.method === 'PUT') {
-        return json({
-          monitors: await this.scheduler.updateMonitor(await request.json<MonitorTarget>()),
-        })
-      }
-      if (request.method === 'DELETE') {
-        const { id } = await request.json<{ id: string }>()
-        return json({ monitors: await this.scheduler.deleteMonitor(id) })
-      }
-      return json({ error: 'method not allowed' }, 405)
-    } catch (error) {
-      return json(
-        { error: error instanceof Error ? error.message : 'Scheduler request failed' },
-        error instanceof SchedulerError ? error.status : 500
-      )
-    }
   }
 }
 

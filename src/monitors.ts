@@ -1,4 +1,5 @@
 import type { MonitorTarget, RuntimeBindings } from './types'
+import type { MonitorScheduler } from './index'
 
 export class SchedulerError extends Error {
   constructor(
@@ -9,30 +10,35 @@ export class SchedulerError extends Error {
   }
 }
 
-// Fetch the page-managed monitor list from the MonitorScheduler Durable
-// Object. Used by the web routes of this same Worker through the DO binding.
+// The scheduler DO is the single source of truth for page-managed monitors.
+// v4 talks to it via Durable Object RPC (typed stub methods) instead of
+// fetch-over-binding: no URL routing, no JSON re-encoding, full type safety.
 export async function schedulerMonitors(
   env: RuntimeBindings,
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET',
-  body?: MonitorTarget | { id: string }
+  action: 'list' | 'add' | 'update' | 'delete',
+  monitor?: MonitorTarget | { id: string }
 ): Promise<MonitorTarget[]> {
   const namespace = env.MONITOR_SCHEDULER_DO
   if (!namespace) throw new Error('MONITOR_SCHEDULER_DO binding is missing')
-  const response = await namespace
-    .get(namespace.idFromName('default'))
-    .fetch('https://scheduler/monitors', {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    })
-  const result = await response.json<{ monitors?: MonitorTarget[]; error?: string }>()
-  if (!response.ok || !result.monitors) {
+  const stub = namespace.get(namespace.idFromName('default'))
+
+  try {
+    switch (action) {
+      case 'list':
+        return await stub.listMonitors()
+      case 'add':
+        return await stub.addMonitor(monitor as MonitorTarget)
+      case 'update':
+        return await stub.updateMonitor(monitor as MonitorTarget)
+      case 'delete':
+        return await stub.deleteMonitor((monitor as { id: string }).id)
+    }
+  } catch (error) {
     throw new SchedulerError(
-      result.error || 'Scheduler request failed',
-      response.ok ? 502 : response.status
+      error instanceof Error ? error.message : 'Scheduler request failed',
+      502
     )
   }
-  return result.monitors
 }
 
 // Monitor list with a short isolate-local cache (60s): the list changes
@@ -50,7 +56,7 @@ export async function getStoredMonitors(
   if (!options?.fresh && cached && Date.now() - cached.at < MONITORS_CACHE_TTL_MS) {
     return cached.monitors.slice()
   }
-  const monitors = await schedulerMonitors(env)
+  const monitors = await schedulerMonitors(env, 'list')
   cacheStore.__uptimeMonitorsCache = { at: Date.now(), monitors }
   return monitors.slice()
 }
@@ -71,9 +77,7 @@ export function slugify(value: string) {
     .slice(0, 64)
 }
 
-function readString(data: Record<string, unknown>, key: string) {
-  return String(data[key] ?? '').trim()
-}
+const readString = (data: Record<string, unknown>, key: string) => String(data[key] ?? '').trim()
 
 function validateTarget(target: string): URL {
   if (!target) throw new Error('请输入网站地址')
@@ -104,26 +108,15 @@ function validateInterval(minutes: number) {
   return minutes
 }
 
-function validatePreview(preview: string) {
-  if (!preview) return undefined
+function validateUrl(value: string, message: string): string | undefined {
+  if (!value) return undefined
   try {
-    const previewUrl = new URL(preview)
-    if (!['http:', 'https:'].includes(previewUrl.protocol)) throw new Error('invalid preview')
+    const url = new URL(value)
+    if (!['http:', 'https:'].includes(url.protocol)) throw new Error(message)
   } catch {
-    throw new Error('封面图地址格式无效')
+    throw new Error(message)
   }
-  return preview
-}
-
-function validateStatusPageLink(statusPageLink: string) {
-  if (!statusPageLink) return undefined
-  try {
-    const linkUrl = new URL(statusPageLink)
-    if (!['http:', 'https:'].includes(linkUrl.protocol)) throw new Error('invalid link')
-  } catch {
-    throw new Error('访问链接格式无效')
-  }
-  return statusPageLink
+  return value
 }
 
 function validateName(name: string) {
@@ -137,15 +130,10 @@ export function parseNewMonitor(input: unknown): MonitorTarget {
   const data = input && typeof input === 'object' ? (input as Record<string, unknown>) : {}
   const name = validateName(readString(data, 'name'))
   const group = readString(data, 'group') || '核心服务'
-  const preview = readString(data, 'preview')
-  const statusPageLink = readString(data, 'statusPageLink')
   const timeout = validateTimeout(Number(data.timeout ?? 4500))
   const intervalMinutes = validateInterval(Number(data.intervalMinutes ?? 10))
 
   const url = validateTarget(readString(data, 'target'))
-  const validatedPreview = validatePreview(preview)
-  const validatedLink = validateStatusPageLink(statusPageLink)
-
   const id = slugify(readString(data, 'id') || `${url.hostname}-${name}`)
   if (!id) throw new Error('无法生成监测 ID')
 
@@ -153,8 +141,8 @@ export function parseNewMonitor(input: unknown): MonitorTarget {
     id,
     name,
     target: url.toString(),
-    statusPageLink: validatedLink ?? url.toString(),
-    preview: validatedPreview,
+    statusPageLink: validateUrl(readString(data, 'statusPageLink'), '访问链接格式无效') ?? url.toString(),
+    preview: validateUrl(readString(data, 'preview'), '封面图地址格式无效'),
     group,
     timeout,
     intervalMinutes,
@@ -167,30 +155,24 @@ export function mergeMonitorUpdate(existing: MonitorTarget, input: unknown): Mon
   const data = input && typeof input === 'object' ? (input as Record<string, unknown>) : {}
   const next: MonitorTarget = { ...existing }
 
-  if (data.name !== undefined) {
-    next.name = validateName(readString(data, 'name'))
-  }
+  if (data.name !== undefined) next.name = validateName(readString(data, 'name'))
 
   if (data.target !== undefined && readString(data, 'target') !== '') {
     next.target = validateTarget(readString(data, 'target')).toString()
   }
 
-  if (data.group !== undefined) {
-    next.group = readString(data, 'group') || '核心服务'
-  }
+  if (data.group !== undefined) next.group = readString(data, 'group') || '核心服务'
 
   if (data.preview !== undefined) {
-    next.preview = validatePreview(readString(data, 'preview'))
+    next.preview = validateUrl(readString(data, 'preview'), '封面图地址格式无效')
   }
 
   if (data.statusPageLink !== undefined) {
     const link = readString(data, 'statusPageLink')
-    next.statusPageLink = link ? validateStatusPageLink(link) : next.target
+    next.statusPageLink = link ? validateUrl(link, '访问链接格式无效') : next.target
   }
 
-  if (data.timeout !== undefined) {
-    next.timeout = validateTimeout(Number(data.timeout))
-  }
+  if (data.timeout !== undefined) next.timeout = validateTimeout(Number(data.timeout))
 
   if (data.intervalMinutes !== undefined) {
     next.intervalMinutes = validateInterval(Number(data.intervalMinutes))

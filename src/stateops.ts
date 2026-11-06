@@ -16,7 +16,7 @@ import {
   type IncidentRow,
   type LatencyRow,
   type MetaRow,
-} from './state-format'
+} from './state'
 import type { CheckOutcome } from './checks'
 
 export type { CheckOutcome }

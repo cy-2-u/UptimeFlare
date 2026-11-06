@@ -1,88 +1,65 @@
-import { bytesToHex, hexToBytes } from './state-format'
-import { readValue, setRuntimeValue } from './store'
+import { bytesToHex, hexToBytes, readValue, setRuntimeValue } from './state'
 import type { RuntimeEnv } from './types'
 
 const ADMIN_KEY = 'admin_credentials'
 export const SESSION_COOKIE = 'status_admin_session'
 const SESSION_TTL_SEC = 30 * 24 * 60 * 60
 
-type AdminCredentials = {
-  username: string
-  salt: string
-  passwordHash: string
-}
+type AdminCredentials = { username: string; salt: string; passwordHash: string }
 
 // The session token is an HMAC-signed payload with an expiry. The stored
 // password hash doubles as the signing secret, so changing the password
 // invalidates every existing session immediately.
-type SessionPayload = {
-  u: string
-  ph: string
-  exp: number
-}
+type SessionPayload = { u: string; ph: string; exp: number }
 
-function randomHex(length = 16) {
-  const bytes = new Uint8Array(length)
-  crypto.getRandomValues(bytes)
-  return Array.from(bytes)
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('')
-}
+const randomHex = (length = 16) =>
+  bytesToHex(crypto.getRandomValues(new Uint8Array(length)))
 
 async function hashPassword(password: string, salt: string) {
   const data = new TextEncoder().encode(`${salt}:${password}`)
   return bytesToHex(new Uint8Array(await crypto.subtle.digest('SHA-256', data)))
 }
 
-async function hmacKey(secret: string) {
-  return crypto.subtle.importKey(
+async function hmac(secret: string, message: string) {
+  const key = await crypto.subtle.importKey(
     'raw',
     new TextEncoder().encode(secret),
     { name: 'HMAC', hash: 'SHA-256' },
     false,
-    ['sign', 'verify']
+    ['sign']
   )
-}
-
-async function hmacSign(secret: string, message: string) {
-  const signature = await crypto.subtle.sign(
-    'HMAC',
-    await hmacKey(secret),
-    new TextEncoder().encode(message)
-  )
-  return bytesToHex(new Uint8Array(signature))
+  return bytesToHex(new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(message))))
 }
 
 // Constant-time signature verification via WebCrypto (never a string compare).
-async function hmacVerify(secret: string, message: string, signatureHex: string) {
-  const signature = hexToBytes(signatureHex)
-  if (signature.length !== 32) return false
+async function hmacValid(secret: string, message: string, signatureHex: string) {
+  if (hexToBytes(signatureHex).length !== 32) return false
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['verify']
+  )
   return crypto.subtle.verify(
     'HMAC',
-    await hmacKey(secret),
-    signature,
+    key,
+    hexToBytes(signatureHex) as unknown as ArrayBuffer,
     new TextEncoder().encode(message)
   )
 }
 
-function b64urlEncode(value: string) {
-  const bytes = new TextEncoder().encode(value)
-  let binary = ''
-  bytes.forEach((byte) => {
-    binary += String.fromCharCode(byte)
-  })
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-}
+const b64urlEncode = (value: string) =>
+  btoa(String.fromCharCode(...new TextEncoder().encode(value)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '')
 
 function b64urlDecode(token: string): string | null {
   try {
     const base64 = token.replace(/-/g, '+').replace(/_/g, '/')
     const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')
-    const binary = atob(padded)
-    const bytes = new Uint8Array(binary.length)
-    for (let index = 0; index < binary.length; index += 1) {
-      bytes[index] = binary.charCodeAt(index)
-    }
+    const bytes = Uint8Array.from(atob(padded), (char) => char.charCodeAt(0))
     return new TextDecoder().decode(bytes)
   } catch {
     return null
@@ -92,7 +69,6 @@ function b64urlDecode(token: string): string | null {
 export async function getAdminCredentials(env: RuntimeEnv): Promise<AdminCredentials | null> {
   const value = await readValue(env, ADMIN_KEY)
   if (!value) return null
-
   try {
     const credentials = JSON.parse(value) as AdminCredentials
     if (!credentials.username || !credentials.salt || !credentials.passwordHash) return null
@@ -139,7 +115,7 @@ export async function createSession(env: RuntimeEnv, credentials?: AdminCredenti
     exp: Math.floor(Date.now() / 1000) + SESSION_TTL_SEC,
   }
   const payloadStr = b64urlEncode(JSON.stringify(payload))
-  return `${payloadStr}.${await hmacSign(admin.passwordHash, payloadStr)}`
+  return `${payloadStr}.${await hmac(admin.passwordHash, payloadStr)}`
 }
 
 export async function validateSession(env: RuntimeEnv, token?: string | null) {
@@ -147,8 +123,6 @@ export async function validateSession(env: RuntimeEnv, token?: string | null) {
   const dotIndex = token.lastIndexOf('.')
   if (dotIndex <= 0) return false
   const payloadStr = token.slice(0, dotIndex)
-  const signature = token.slice(dotIndex + 1)
-
   const payloadJson = b64urlDecode(payloadStr)
   if (!payloadJson) return false
 
@@ -165,49 +139,46 @@ export async function validateSession(env: RuntimeEnv, token?: string | null) {
   if (!credentials) return false
   if (credentials.username !== payload.u || credentials.passwordHash !== payload.ph) return false
 
-  return hmacVerify(credentials.passwordHash, payloadStr, signature)
+  return hmacValid(credentials.passwordHash, payloadStr, token.slice(dotIndex + 1))
 }
 
 export function getCookieValue(cookieHeader: string | undefined, name: string) {
-  if (!cookieHeader) return null
-  const cookies = cookieHeader.split(';').map((item) => item.trim())
   const prefix = `${name}=`
-  const cookie = cookies.find((item) => item.startsWith(prefix))
+  const cookie = cookieHeader
+    ?.split(';')
+    .map((item) => item.trim())
+    .find((item) => item.startsWith(prefix))
   return cookie ? decodeURIComponent(cookie.slice(prefix.length)) : null
 }
 
-export function getRequestCookie(request: Request): string | undefined {
-  return request.headers.get('cookie') ?? undefined
-}
-
-// Cheap cookie-presence check for nav rendering: no session cookie means the
-// visitor is anonymous (zero D1 reads); a present cookie gets real validation
-// by the caller. Actual enforcement always happens server-side on /manage and
-// the admin APIs.
 export function hasSessionCookie(request: Request): boolean {
   return Boolean(getCookieValue(request.headers.get('cookie') ?? undefined, SESSION_COOKIE))
 }
 
 export async function isAdminRequest(request: Request, env: RuntimeEnv) {
-  return validateSession(env, getCookieValue(getRequestCookie(request), SESSION_COOKIE))
+  return validateSession(env, getCookieValue(request.headers.get('cookie') ?? undefined, SESSION_COOKIE))
+}
+
+function cookie(parts: string[], secure: boolean) {
+  if (secure) parts.push('Secure')
+  return parts.join('; ')
 }
 
 export function sessionCookie(token: string, secure = true) {
-  const parts = [
-    `${SESSION_COOKIE}=${encodeURIComponent(token)}`,
-    'Path=/',
-    'HttpOnly',
-    'SameSite=Lax',
-    `Max-Age=${SESSION_TTL_SEC}`,
-  ]
-  if (secure) parts.push('Secure')
-  return parts.join('; ')
+  return cookie(
+    [
+      `${SESSION_COOKIE}=${encodeURIComponent(token)}`,
+      'Path=/',
+      'HttpOnly',
+      'SameSite=Lax',
+      `Max-Age=${SESSION_TTL_SEC}`,
+    ],
+    secure
+  )
 }
 
 export function expiredSessionCookie(secure = true) {
-  const parts = [`${SESSION_COOKIE}=`, 'Path=/', 'HttpOnly', 'SameSite=Lax', 'Max-Age=0']
-  if (secure) parts.push('Secure')
-  return parts.join('; ')
+  return cookie([`${SESSION_COOKIE}=`, 'Path=/', 'HttpOnly', 'SameSite=Lax', 'Max-Age=0'], secure)
 }
 
 export function isHttpsRequest(request: Request): boolean {
@@ -219,4 +190,3 @@ export function isHttpsRequest(request: Request): boolean {
     return false
   }
 }
-

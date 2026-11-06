@@ -1,5 +1,5 @@
 /* ================================================================
-   UptimeFlare v3.1 client runtime — dependency-free vanilla JS.
+   UptimeFlare v4 client runtime — dependency-free vanilla JS.
 
    Page branches (by bootstrap + markers):
      status  — hero counters, uptime bars, live poll, dialogs
@@ -943,11 +943,12 @@
       })
     }
     // Leave edit mode AND restore pristine defaults (fields + dropdowns).
+    // The timeout default must match the dropdown's initial selection (3s).
     function clearEditMode() {
       setEditing('')
       form.reset()
       intervalDropdown.value = 10
-      timeoutDropdown.value = 5
+      timeoutDropdown.value = 3
       setMessage('')
     }
 
@@ -1090,6 +1091,11 @@
   // ---- bootstrap ----------------------------------------------------------------------------------
 
   document.addEventListener('DOMContentLoaded', function () {
+    // The login page has no #bootstrap; its init must not be gated on one.
+    if ($('#login-form')) {
+      initLoginPage()
+    }
+
     var el = $('#bootstrap')
     if (!el) return
     var bootstrap
@@ -1107,9 +1113,6 @@
 
     if ($('[data-interval-box]') && $('[data-timeout-box]')) {
       initManagePage(bootstrap)
-    }
-    if ($('#login-form')) {
-      initLoginPage()
     }
 
     // Dialog chrome: close buttons + backdrop click.

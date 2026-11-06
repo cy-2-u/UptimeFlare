@@ -1,10 +1,7 @@
 import type { MonitorTarget, Notification } from './types'
 import { maintenances, workerConfig } from './config'
-import type { PendingNotice } from './stateops'
-
-export function shouldSendNotification() {
-  return true
-}
+import { fetchTimeout } from './util'
+import type { PendingNotice } from './round'
 
 // 通知区域修改开始
 // 推送渠道：「及时通知」(timelynotify) —— GET {BASE}/{标题}/{正文}?icon=&group=&ttl=&sound=
@@ -84,17 +81,6 @@ export function buildPushUrl(title: string, body: string): string {
 }
 // 通知区域修改结束
 
-async function fetchWithTimeout(url: string, ms: number, options: RequestInit = {}) {
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), ms)
-
-  try {
-    return await fetch(url, { ...options, signal: controller.signal })
-  } finally {
-    clearTimeout(timeout)
-  }
-}
-
 export async function sendNotification(context: {
   monitor: MonitorTarget
   isUp: boolean
@@ -102,11 +88,6 @@ export async function sendNotification(context: {
   timeNow: number
   reason: string
 }) {
-  if (!shouldSendNotification()) {
-    console.log(`Notification disabled, skipping ${context.monitor.name}`)
-    return
-  }
-
   const { title, body } = buildNotificationMessage({
     ...context,
     timeZone: workerConfig.notification?.timeZone ?? 'Etc/GMT',
@@ -114,7 +95,7 @@ export async function sendNotification(context: {
   const url = buildPushUrl(title, body)
 
   try {
-    const response = await fetchWithTimeout(url, PUSH_TIMEOUT_MS, { method: 'GET' })
+    const response = await fetchTimeout(url, PUSH_TIMEOUT_MS, { method: 'GET' })
 
     if (!response.ok) {
       console.log(

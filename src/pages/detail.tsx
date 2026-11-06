@@ -16,6 +16,7 @@ export function DetailPage(props: {
   state: {
     incident: Record<string, IncidentRecord[]>
     latency: Record<string, { time: number; ping: number; loc: string }[]>
+    lastStatus?: Record<string, 'up' | 'down' | null>
   }
   bootstrap: string
 }) {
@@ -23,7 +24,11 @@ export function DetailPage(props: {
   const incidents = state.incident[monitor.id]
   const latencies = state.latency[monitor.id] ?? []
   const hasData = (incidents ? incidents.length : 0) > 0 || latencies.length > 0
-  const isUp = incidents ? incidents[incidents.length - 1].end === null : false
+  // An open incident means down; otherwise the check-round status decides
+  // (unknown -> down is only reachable when hasData is false, which renders
+  // the empty card below instead).
+  const hasOpenIncident = incidents && incidents[incidents.length - 1].end === null
+  const isUp = hasOpenIncident ? false : state.lastStatus?.[monitor.id] === 'down' ? false : true
 
   return (
     <div class="detail-wrap">
