@@ -538,7 +538,7 @@ app.get('/manage', async (c) => {
   }
   const monitors = await getStoredMonitors(c.env, { fresh: true })
   return c.html(
-    <Layout pageConfig={pageConfig} title="站点管理" isAdmin>
+    <Layout pageConfig={pageConfig} title="站点管理" isAdmin page="manage">
       <ManagePage monitors={monitors} />
     </Layout>,
     200,

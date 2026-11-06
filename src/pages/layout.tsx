@@ -2,12 +2,25 @@ import type { PageConfig } from '../types'
 
 // Page shell. The nav is rendered server-side from the validated session
 // (see navIsAdmin in index.tsx) — no client swap, no flash, no extra fetch.
+// On the manage page the "站点管理" button becomes "返回" (back to the
+// status page), since the page is already in front of the visitor.
 export function Layout(props: {
   pageConfig: PageConfig
   title: string
   isAdmin?: boolean
+  page?: 'status' | 'manage'
   children: unknown
 }) {
+  const navAdminButton =
+    props.page === 'manage' ? (
+      <a href="/" class="btn ghost sm">
+        ← 返回
+      </a>
+    ) : (
+      <a href="/manage" class="btn ghost sm">
+        站点管理
+      </a>
+    )
   return (
     <html lang="zh-CN">
       <head>
@@ -40,9 +53,7 @@ export function Layout(props: {
             <nav class="topnav">
               {props.isAdmin && (
                 <>
-                  <a href="/manage" class="btn ghost sm">
-                    站点管理
-                  </a>
+                  {navAdminButton}
                   <button type="button" class="btn ghost sm danger-hover" data-action="logout">
                     退出
                   </button>
