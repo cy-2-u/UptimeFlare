@@ -6,7 +6,6 @@ import {
   appendLatencyPoint,
   emptyIncidentRow,
   emptyLatencyRow,
-  getIncidentRecord,
   incidentRowCount,
   lastIncidentRecord,
   lastLatencyPoint,

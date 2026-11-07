@@ -33,7 +33,8 @@ async function hmac(secret: string, message: string) {
 
 // Constant-time signature verification via WebCrypto (never a string compare).
 async function hmacValid(secret: string, message: string, signatureHex: string) {
-  if (hexToBytes(signatureHex).length !== 32) return false
+  const signature = hexToBytes(signatureHex)
+  if (signature.length !== 32) return false
   const key = await crypto.subtle.importKey(
     'raw',
     new TextEncoder().encode(secret),
@@ -41,12 +42,7 @@ async function hmacValid(secret: string, message: string, signatureHex: string) 
     false,
     ['verify']
   )
-  return crypto.subtle.verify(
-    'HMAC',
-    key,
-    hexToBytes(signatureHex) as unknown as ArrayBuffer,
-    new TextEncoder().encode(message)
-  )
+  return crypto.subtle.verify('HMAC', key, signature, new TextEncoder().encode(message))
 }
 
 const b64urlEncode = (value: string) =>
