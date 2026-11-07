@@ -576,8 +576,8 @@ export class MonitorScheduler extends DurableObject {
     this.scheduler = new SchedulerState(ctx.storage, env, (monitors) => runChecks(env, monitors))
   }
 
-  // Typed RPC surface (v4): the Worker calls stub.listMonitors() etc.
-  // directly — no fetch routing, no JSON envelope, no manual error mapping.
+  // Typed RPC surface: the Worker calls stub.listMonitors() etc. directly —
+  // no fetch routing, no JSON envelope, no manual error mapping.
   async listMonitors(): Promise<MonitorTarget[]> {
     return this.scheduler.listMonitors()
   }

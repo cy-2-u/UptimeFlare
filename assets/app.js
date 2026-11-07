@@ -1,5 +1,5 @@
 /* ================================================================
-   UptimeFlare v4 client runtime — dependency-free vanilla JS.
+   UptimeFlare client runtime — dependency-free vanilla JS.
 
    Page branches (by bootstrap + markers):
      status  — hero counters, uptime bars, live poll, dialogs

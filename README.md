@@ -1,8 +1,19 @@
-# 服务状态（UptimeFlare v4）
+# UptimeFlare
 
-跑在 Cloudflare 免费额度上的网站可用性监控 + 状态页。v4 在 v3（单 Worker
-全面重写版）基础上进一步精简：**类型化 Durable Object RPC**、单一状态层模块、
-页面状态判定与检查轮同源。无框架构建链、无 Pages 项目、无 Terraform/Python。
+跑在 Cloudflare Workers 免费额度上的网站可用性监控 + 状态页。单个 Worker
+承载一切：Hono JSX SSR 页面、JSON API、静态资产、Durable Object 监测调度——
+无独立构建链、无 Pages 项目、无 Terraform/Python。
+
+**在线示例**：<https://w.chaoyang.us.ci>
+
+## 功能
+
+- HTTP 可用性监测：每站点独立检查间隔（10/20/30/60 分钟）与超时；单次失败二次确认，网络抖动不误报
+- 状态页：分组卡片、30 天可用率条、90 天历史、12 小时响应时间曲线、历史故障弹窗（按站点/月份筛选）
+- 管理：首次访问 `/login` 创建管理员，`/manage` 增删改站点；编辑不改 ID，历史全保留
+- 通知：宕机/恢复/错误变化即时推送（timelynotify GET 渠道，改常量即可换同类服务）
+- 对外接口：Shields.io 徽章 `/api/badge`、轻量摘要 `/api/data`（CORS *）、全量状态 `/api/status`
+- 免费额度友好：未到期监测整轮跳过、零写入；Cron 仅作监督兜底，主调度靠 DO alarm
 
 ## 架构
 
@@ -20,49 +31,34 @@
 │  静态资产:       /app.css /app.js /favicon.*（免费，不计数）   │
 │                                                                │
 │  MonitorScheduler DO（闹钟主调度，每 10 分钟自续）             │
-│    ├─ 类型化 RPC: list/add/update/deleteMonitor + ensureAlarm  │
-│    │   / healIfStale / runNow（Worker 经 stub 直调，无 fetch    │
-│    │   路由、无 JSON 封装）                                    │
-│    └─ runChecks: 按 due 过滤 → 并发检查(失败2次确认)           │
+│    ├─ 类型化 RPC: list/add/update/deleteMonitor 等直调方法     │
+│    └─ runChecks: 按 due 过滤 → 并发检查（失败 2 次确认）       │
 │         → 单批 CAS 原子写 D1 → 写成功后才发通知                 │
-│  Cron 0 * * * *（每小时，仅监督：缺失/过期/停滞时重新上弦）    │
+│  Cron 0 * * * *（每小时，仅监督：闹钟缺失/过期/停滞时重新上弦）│
 └────────────────────────────────────────────────────────────────┘
 ```
 
 ### 关键设计
 
-- **每监控检查间隔**：`intervalMinutes`（10/20/30/60，10 的倍数）。调度器每
-  10 分钟 tick 一次，未到期的监控**整轮跳过、零写入**——免费额度随间隔拉长
-  线性节省。
-- **先持久化后通知**：状态写入 D1（批量 CAS 原子生效）成功后才发通知，
-  失败的轮次什么都不发，下一轮重新判定。
-- **页面状态与检查轮同源**：首页/详情页状态取自延迟行的 `lastStatus`
-  （与 meta 计数同一来源），进行中的故障行优先判定宕机；从未检查的监控
-  显示"等待检查"。
-- **时间渲染全在客户端**：SSR 只输出结构与时区无关的状态，"x 前"／柱状图／
-  事件时间由 `app.js` 按访客时区填充，无 hydration、无框架运行时。
-- **D1 行式存储**：`state:meta` / `state:inc:<id>`（事件，90 天）/
-  `state:lat:<id>`（延迟+最近状态，12h）。事件行只在变化时写。行布局、
-  hex/RLE 编解码与 CAS 读写统一在 `src/state.ts`。
+- **先持久化后通知**：状态写入 D1（批量 CAS 原子生效）成功后才发通知，失败的轮次什么都不发，下一轮重新判定。
+- **页面状态与检查轮同源**：页面状态取自延迟行的 `lastStatus`（与汇总计数同一来源），进行中的故障优先判定宕机，从未检查的显示"等待检查"。
+- **时间渲染全在客户端**：SSR 只输出与时区无关的结构，"x 前"、柱状图、事件时间由 `app.js` 按访客时区填充，无 hydration、无框架运行时。
+- **D1 行式存储**：`state:meta` / `state:inc:<id>`（事件，保留 90 天）/ `state:lat:<id>`（延迟 + 最近状态，保留 12 小时）；事件行只在变化时写。行布局、hex/RLE 编解码与 CAS 读写统一在 `src/state.ts`。
 
-## 管理入口
+## 部署（部署到你自己的 Cloudflare 账户）
 
-首次访问 `/login` 创建管理员；`/manage` 添加/编辑/删除站点（编辑保留全部
-历史），支持每站点检查间隔（10/20/30/60 分钟）与超时设置。管理页导航的
-「站点管理」按钮自动变为「← 返回」。
+1. Fork 或导入本仓库。
+2. 仓库 Secrets 配置 `CLOUDFLARE_API_TOKEN`（`CLOUDFLARE_ACCOUNT_ID` 可选，缺省自动获取）。
+3. 推送到 `main` 即自动部署（Actions）：`npm ci` → 测试 → dry-run 构建 → 确保 D1/表 → 注入 D1 ID → `wrangler deploy` → `/health` 冒烟。
+4. 部署完成后访问 `https://uptimeflare_worker.<你的 workers.dev 子域>.workers.dev`，首次进入 `/login` 创建管理员。
+5. 自定义域名在 Cloudflare Dashboard → Worker → Settings → Domains & Routes 绑定。
+
+**从旧版 UptimeFlare 升级**：Worker 名、DO 类名与迁移台账不变，已有站点、历史数据、管理员凭证原样保留，无迁移步骤。
 
 ## 配置
 
-`src/config.ts`：页面标题/链接/图标（`pageConfig`）、通知
-（`workerConfig.notification`：timeZone、gracePeriod、skipNotificationIds、
-skipErrorChangeNotification）、维护窗口（`maintenances`）。
-
-### 通知渠道
-
-「及时通知」(timelynotify) GET 推送。`src/notify.ts` 的
-「通知区域修改开始/结束」标记内改常量即可换渠道：`PUSH_BASE_URL`
-（key 拼在路径里）、`PUSH_ICON`、`PUSH_GROUP`、`PUSH_TTL_SEC`、
-`PUSH_SOUND`；标题/正文经 URL 编码后作为路径段。
+- `src/config.ts`：页面标题/链接/图标（`pageConfig`）、通知（`workerConfig.notification`：timeZone、gracePeriod、skipNotificationIds、skipErrorChangeNotification）、维护窗口（`maintenances`）。
+- 通知渠道：`src/notify.ts`「通知区域修改开始/结束」标记内改常量即可换渠道（`PUSH_BASE_URL`、`PUSH_ICON`、`PUSH_GROUP`、`PUSH_TTL_SEC`、`PUSH_SOUND`）；标题/正文经 URL 编码后作为 GET 路径段。
 
 ## 本地开发
 
@@ -73,27 +69,11 @@ npm run dev        # http://127.0.0.1:8787（--test-scheduled 已开）
 npm test
 ```
 
-手动触发一轮检查：`.dev.vars` 里放 `MONITOR_TRIGGER_SECRET=<值>` 后
-`curl "http://127.0.0.1:8787/trigger?secret=<值>"`（`.dev.vars` 不入库）。
+手动触发一轮检查：`.dev.vars`（不入库）里放 `MONITOR_TRIGGER_SECRET=<值>`，
+然后 `curl "http://127.0.0.1:8787/trigger?secret=<值>"`。
 
-## 部署
-
-推送到 main 即自动部署（Actions）：`npm ci` → 测试 → dry-run 构建 →
-确保 D1/表 → 注入 D1 ID → `wrangler deploy`（资产随 Worker 一起上）→
-`/health` 冒烟（兼上弦）。仓库 Secrets：`CLOUDFLARE_API_TOKEN`
-（`CLOUDFLARE_ACCOUNT_ID` 可选，缺省自动获取）。
-
-**地址**：自定义域名 `https://w.chaoyang.us.ci`（Dashboard 绑定），
-备用 `https://uptimeflare_worker.<子域>.workers.dev`。
-
-本机无 git CLI 时可用仓库自带的 API 推送脚本（走 gh 凭据）：
-
-```bash
-node scripts\push-root.mjs "提交说明"
-```
-
-**升级延续**：Worker 名、DO 类名与迁移台账（v1/v2/v3）不变——页面添加的
-站点、历史数据、管理员凭证原样保留，无迁移步骤。
+无 git 环境的机器也可以用仓库自带的 API 推送脚本（走 `gh` 凭据）：
+`node scripts/push-root.mjs "提交说明"`。
 
 ## 测试
 

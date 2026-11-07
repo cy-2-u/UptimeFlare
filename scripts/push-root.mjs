@@ -1,5 +1,7 @@
-// One-off: push D:\work\jianche (v4, now the project root) to github.com/cy-2-u/UptimeFlare main.
-// Recreates the Git Data API push flow used before; skips .dev.vars and local state dirs.
+// Push this project to github.com/cy-2-u/UptimeFlare main via the Git Data
+// API — for machines without git installed (uses `gh auth token`).
+// Skips local-only paths: node_modules, .wrangler, dist, .git, .dev.vars.
+// Usage: node scripts/push-root.mjs "<commit message>"
 import { execSync } from 'node:child_process'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'

@@ -11,8 +11,8 @@ export class SchedulerError extends Error {
 }
 
 // The scheduler DO is the single source of truth for page-managed monitors.
-// v4 talks to it via Durable Object RPC (typed stub methods) instead of
-// fetch-over-binding: no URL routing, no JSON re-encoding, full type safety.
+// The Worker talks to it via Durable Object RPC (typed stub methods):
+// no URL routing, no JSON re-encoding, full type safety.
 export async function schedulerMonitors(
   env: RuntimeBindings,
   action: 'list' | 'add' | 'update' | 'delete',
