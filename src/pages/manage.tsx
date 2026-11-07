@@ -59,7 +59,7 @@ export function ManagePage(props: { monitors: MonitorTarget[] }) {
                         <path d="M3.5 6l4.5 4.5L12.5 6" />
                       </svg>
                     </button>
-                    <ul class="menu suggest" data-group-suggest hidden />
+                    <ul class="menu" data-group-suggest hidden />
                   </div>
                 </label>
 

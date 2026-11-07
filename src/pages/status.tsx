@@ -1,4 +1,5 @@
 import type { IncidentRecord, MaintenanceConfig, MonitorTarget } from '../types'
+import { hostnameOf } from '../util'
 
 export type StatusBootstrap = {
   lastUpdate: number
@@ -30,14 +31,6 @@ function statusOf(
   // Otherwise the check-round status is authoritative: null (never checked)
   // renders as pending.
   return lastStatus[monitor.id] === 'up' ? 'up' : lastStatus[monitor.id] === 'down' ? 'down' : 'pending'
-}
-
-function hostnameOf(target: string) {
-  try {
-    return new URL(target).hostname
-  } catch {
-    return target.split('/')[0]
-  }
 }
 
 function groupIcon(group: string) {

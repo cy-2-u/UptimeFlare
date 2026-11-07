@@ -75,12 +75,25 @@ type PageState = {
   incident: Record<string, IncidentRecord[]>
   latency: Record<string, LatencyRecord[]>
   lastStatus: Record<string, 'up' | 'down' | null>
+  lastPing: Record<string, number>
   startedAt?: Record<string, number>
 }
 
-// Read meta + fully decoded per-monitor state for page rendering. The
+type ReadStateOptions = {
+  // 'last' skips the full 12h decode and only extracts the latest ping
+  // (homepage cards); the default 'full' decodes arrays for the sparkline
+  // and /api/status consumers.
+  latency?: 'full' | 'last'
+  // Restrict row parsing to one monitor (detail page ignores the rest).
+  onlyId?: string
+}
+
+// Read meta + decoded per-monitor state for page rendering. The
 // columnar->record conversion happens here, once, server-side.
-async function readState(env: Env['Bindings']): Promise<{ meta: MetaRow; state: PageState }> {
+async function readState(
+  env: Env['Bindings'],
+  opts: ReadStateOptions = {}
+): Promise<{ meta: MetaRow; state: PageState }> {
   const snapshot = await readStateSnapshot(env)
 
   let meta: MetaRow = emptyMeta()
@@ -94,6 +107,7 @@ async function readState(env: Env['Bindings']): Promise<{ meta: MetaRow; state: 
 
   const incident: Record<string, IncidentRecord[]> = {}
   for (const [id, row] of snapshot.inc) {
+    if (opts.onlyId && id !== opts.onlyId) continue
     try {
       const parsed = parseIncidentRow(row)
       // A corrupt row must not take the whole page down; skip and log.
@@ -105,20 +119,24 @@ async function readState(env: Env['Bindings']): Promise<{ meta: MetaRow; state: 
 
   const latency: Record<string, LatencyRecord[]> = {}
   const lastStatus: Record<string, 'up' | 'down' | null> = {}
+  const lastPing: Record<string, number> = {}
   const startedAt: Record<string, number> = {}
   for (const [id, row] of snapshot.lat) {
+    if (opts.onlyId && id !== opts.onlyId) continue
     try {
       const parsed = parseLatencyRow(row)
       if (!parsed || parsed.time === '') continue
-      latency[id] = decodeLatency(parsed)
       lastStatus[id] = parsed.lastStatus
       if (parsed.startedAt > 0) startedAt[id] = parsed.startedAt
+      const last = lastLatencyPoint(parsed)
+      if (last) lastPing[id] = last.ping
+      if (opts.latency !== 'last') latency[id] = decodeLatency(parsed)
     } catch (err) {
       console.log(`Skipping unreadable latency row for ${id}: ` + err)
     }
   }
 
-  return { meta, state: { incident, latency, lastStatus, startedAt } }
+  return { meta, state: { incident, latency, lastStatus, lastPing, startedAt } }
 }
 
 function sanitizeMonitors(monitors: MonitorTarget[]) {
@@ -439,15 +457,9 @@ async function navIsAdmin(request: Request, env: Env['Bindings']): Promise<boole
 app.get('/', async (c) => {
   const env = c.env
   const monitors = await getStoredMonitors(env)
-  const { meta, state } = await readState(env)
-
-  // Cards only display the latest latency; the full 12h arrays (sparkline
-  // material) stay on the detail page, keeping this payload small.
-  const lastPing: Record<string, number> = {}
-  for (const monitor of monitors) {
-    const points = state.latency[monitor.id]
-    if (points?.length) lastPing[monitor.id] = points[points.length - 1].ping
-  }
+  // 'last' skips the full 12h decode: cards only show the latest ping, the
+  // sparkline arrays stay a detail-page concern.
+  const { meta, state } = await readState(env, { latency: 'last' })
 
   return c.html(
     <Layout
@@ -466,7 +478,7 @@ app.get('/', async (c) => {
           monitors: sanitizeMonitors(monitors),
           incident: state.incident,
           startedAt: state.startedAt,
-          lastPing,
+          lastPing: state.lastPing,
           maintenances,
         }}
       />
@@ -494,7 +506,8 @@ app.get('/m/:id', async (c) => {
     )
   }
 
-  const { meta, state } = await readState(c.env)
+  // Decode only this monitor's rows; the others' 12h arrays are irrelevant.
+  const { meta, state } = await readState(c.env, { onlyId: id })
   const bootstrap = JSON.stringify({
     monitor: sanitizeMonitors([monitor])[0],
     incident: state.incident[id] ?? [],

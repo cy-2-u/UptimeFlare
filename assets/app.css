@@ -436,6 +436,7 @@ main { max-width: 80rem; margin: 0 auto; padding: 0 1rem 4rem; }
 .maint.blue { background: #eff6ff; border-left-color: #3b82f6; }
 .maint.red { background: #fef2f2; border-left-color: #ef4444; }
 .maint.gray { background: #f9fafb; border-left-color: #9ca3af; }
+.maint.green { background: #f0fdf4; border-left-color: #22c55e; }
 .maint .maint-title { font-weight: 700; }
 .maint.amber .maint-title { color: var(--warn-deep); }
 .maint.blue .maint-title { color: #2563eb; }

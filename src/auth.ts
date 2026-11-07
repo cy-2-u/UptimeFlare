@@ -144,7 +144,14 @@ export function getCookieValue(cookieHeader: string | undefined, name: string) {
     ?.split(';')
     .map((item) => item.trim())
     .find((item) => item.startsWith(prefix))
-  return cookie ? decodeURIComponent(cookie.slice(prefix.length)) : null
+  if (!cookie) return null
+  try {
+    return decodeURIComponent(cookie.slice(prefix.length))
+  } catch {
+    // A truncated/corrupted cookie value must read as "no session", not 500
+    // every page render for that visitor.
+    return null
+  }
 }
 
 export function hasSessionCookie(request: Request): boolean {

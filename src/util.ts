@@ -29,6 +29,16 @@ export const fetchTimeout = (
   return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timeout))
 }
 
+// Hostname of a monitor target for display; falls back to the raw string
+// when the target is not a parseable URL.
+export function hostnameOf(target: string): string {
+  try {
+    return new URL(target).hostname
+  } catch {
+    return target.split('/')[0]
+  }
+}
+
 // Serialize overlapping runs/mutations inside one Durable Object.
 export class RunCoordinator {
   private pending: Promise<void> | null = null

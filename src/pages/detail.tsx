@@ -1,12 +1,5 @@
 import type { IncidentRecord, MonitorTarget } from '../types'
-
-function hostnameOf(target: string) {
-  try {
-    return new URL(target).hostname
-  } catch {
-    return target.split('/')[0]
-  }
-}
+import { hostnameOf } from '../util'
 
 // Single-monitor view (iframe friendly, linked as /m/<id>). The shell is
 // server-rendered; bars/sparkline/badges are filled by app.js from the
