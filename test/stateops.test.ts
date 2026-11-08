@@ -3,20 +3,13 @@ import assert from 'node:assert/strict'
 import { applyRound, isMonitorDue, type CheckOutcome } from '../src/stateops'
 import { decodeLatency, type IncidentRow, type LatencyRow } from '../src/state'
 import type { MonitorTarget } from '../src/types'
+import { makeMonitor } from './fakes'
 
 const T0 = 1_700_000_000
 
 type RoundState = { lat: Map<string, LatencyRow>; inc: Map<string, IncidentRow> }
 
-function monitor(partial: Partial<MonitorTarget> = {}): MonitorTarget {
-  return {
-    id: 'example-com',
-    name: 'Example',
-    target: 'https://example.com',
-    timeout: 4500,
-    ...partial,
-  }
-}
+const monitor = makeMonitor
 
 function outcome(
   mon: MonitorTarget,

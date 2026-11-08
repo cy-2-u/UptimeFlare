@@ -131,13 +131,7 @@ export function incidentRowCount(row: IncidentRow): number {
   return row.start.length
 }
 
-export function getIncidentRecord(row: IncidentRow, index: number): IncidentRecord {
-  if (index < 0 || index >= row.start.length) throw new Error('Incident index out of bounds')
-  return { start: row.start[index], end: row.end[index], error: row.error[index] }
-}
-
 export function setIncidentRecord(row: IncidentRow, index: number, record: IncidentRecord): void {
-  if (index < 0 || index >= row.start.length) throw new Error('Incident index out of bounds')
   row.start[index] = record.start
   row.end[index] = record.end
   row.error[index] = record.error
@@ -149,8 +143,10 @@ export function appendIncidentRecord(row: IncidentRow, record: IncidentRecord): 
   row.error.push(record.error)
 }
 
+// Callers guard with incidentRowCount(row) > 0.
 export function lastIncidentRecord(row: IncidentRow): IncidentRecord {
-  return getIncidentRecord(row, row.start.length - 1)
+  const i = row.start.length - 1
+  return { start: row.start[i], end: row.end[i], error: row.error[i] }
 }
 
 // Drop closed incidents that ended before `before`. Returns true if changed.
@@ -236,28 +232,6 @@ export async function readStateSnapshot(env: { UPTIMEFLARE_D1?: D1Database }): P
   return { meta, lat, inc }
 }
 
-export async function readLatencySnapshot(
-  env: { UPTIMEFLARE_D1?: D1Database }
-): Promise<{ meta: RowSnapshot; lat: Map<string, RowSnapshot> }> {
-  const { results } = await requireD1(env)
-    .prepare(`SELECT key, value FROM ${TABLE} WHERE key = ? OR key LIKE 'state:lat:%'`)
-    .bind(META_KEY)
-    .all<{ key: string; value: string }>()
-
-  const meta: RowSnapshot = { key: META_KEY, value: null }
-  const lat = new Map<string, RowSnapshot>()
-
-  for (const row of results ?? []) {
-    if (row.key === META_KEY) {
-      meta.value = row.value
-    } else if (row.key.startsWith('state:lat:')) {
-      lat.set(row.key.slice('state:lat:'.length), { key: row.key, value: row.value })
-    }
-  }
-
-  return { meta, lat }
-}
-
 // Build a CAS change against a snapshot read earlier in the same run.
 export function changeFrom(snapshot: RowSnapshot, next: string): RowChange {
   return { key: snapshot.key, expected: snapshot.value, next }
@@ -315,14 +289,8 @@ export async function deleteRows(
   }
 }
 
-export function parseLatencyRow(snapshot: RowSnapshot | undefined | null): LatencyRow | null {
-  if (!snapshot || snapshot.value === null) return null
-  return JSON.parse(snapshot.value) as LatencyRow
-}
-
-export function parseIncidentRow(snapshot: RowSnapshot | undefined | null): IncidentRow | null {
-  if (!snapshot || snapshot.value === null) return null
-  return JSON.parse(snapshot.value) as IncidentRow
+export function parseRow<T>(value: string | null | undefined): T | null {
+  return value ? (JSON.parse(value) as T) : null
 }
 
 export function emptyMeta(): MetaRow {

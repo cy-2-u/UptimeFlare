@@ -17,11 +17,9 @@ export function DetailPage(props: {
   const incidents = state.incident[monitor.id]
   const latencies = state.latency[monitor.id] ?? []
   const hasData = (incidents ? incidents.length : 0) > 0 || latencies.length > 0
-  // An open incident means down; otherwise the check-round status decides
-  // (unknown -> down is only reachable when hasData is false, which renders
-  // the empty card below instead).
+  // An open incident means down; otherwise the last check decides.
   const hasOpenIncident = incidents && incidents[incidents.length - 1].end === null
-  const isUp = hasOpenIncident ? false : state.lastStatus?.[monitor.id] === 'down' ? false : true
+  const isUp = !hasOpenIncident && state.lastStatus?.[monitor.id] !== 'down'
 
   return (
     <div class="detail-wrap">

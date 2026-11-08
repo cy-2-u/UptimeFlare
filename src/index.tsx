@@ -1,15 +1,14 @@
 import { Hono } from 'hono'
 import { DurableObject } from 'cloudflare:workers'
-import type { IncidentRecord, LatencyRecord, MonitorTarget } from './types'
+import type { IncidentRecord, IncidentRow, LatencyRecord, MonitorTarget } from './types'
+import type { RuntimeBindings } from './types'
 import { maintenances, pageConfig } from './config'
 import {
   emptyMeta,
   incidentsToRecords,
   lastLatencyPoint,
   latencyKey,
-  parseIncidentRow,
-  parseLatencyRow,
-  readLatencySnapshot,
+  parseRow,
   readStateSnapshot,
   readValue,
   decodeLatency,
@@ -22,6 +21,7 @@ import {
   mergeMonitorUpdate,
   parseNewMonitor,
   schedulerMonitors,
+  schedulerStub,
   SchedulerError,
 } from './monitors'
 import { SchedulerState } from './scheduler'
@@ -44,11 +44,7 @@ import { DetailPage } from './pages/detail'
 import { ManagePage } from './pages/manage'
 import { LoginPage } from './pages/login'
 export type Env = {
-  Bindings: {
-    UPTIMEFLARE_D1?: D1Database
-    MONITOR_SCHEDULER_DO?: DurableObjectNamespace<MonitorScheduler>
-    MONITOR_TRIGGER_SECRET?: string
-  }
+  Bindings: RuntimeBindings & { MONITOR_TRIGGER_SECRET?: string }
 }
 
 const app = new Hono<{ Bindings: Env['Bindings'] }>()
@@ -64,12 +60,6 @@ function json(data: unknown, status = 200, extraHeaders: Record<string, string> 
 
 const errorMessage = (error: unknown, fallback: string) =>
   error instanceof Error ? error.message : fallback
-
-function getScheduler(env: Env['Bindings']) {
-  const namespace = env.MONITOR_SCHEDULER_DO
-  if (!namespace) throw new Error('MONITOR_SCHEDULER_DO binding is missing')
-  return namespace.get(namespace.idFromName('default'))
-}
 
 type PageState = {
   incident: Record<string, IncidentRecord[]>
@@ -109,8 +99,8 @@ async function readState(
   for (const [id, row] of snapshot.inc) {
     if (opts.onlyId && id !== opts.onlyId) continue
     try {
-      const parsed = parseIncidentRow(row)
       // A corrupt row must not take the whole page down; skip and log.
+      const parsed = parseRow<IncidentRow>(row.value)
       if (parsed && parsed.start.length > 0) incident[id] = incidentsToRecords(parsed)
     } catch (err) {
       console.log(`Skipping unreadable incident row for ${id}: ` + err)
@@ -124,7 +114,7 @@ async function readState(
   for (const [id, row] of snapshot.lat) {
     if (opts.onlyId && id !== opts.onlyId) continue
     try {
-      const parsed = parseLatencyRow(row)
+      const parsed = parseRow<LatencyRow>(row.value)
       if (!parsed || parsed.time === '') continue
       lastStatus[id] = parsed.lastStatus
       if (parsed.startedAt > 0) startedAt[id] = parsed.startedAt
@@ -139,19 +129,6 @@ async function readState(
   return { meta, state: { incident, latency, lastStatus, lastPing, startedAt } }
 }
 
-function sanitizeMonitors(monitors: MonitorTarget[]) {
-  return monitors.map((monitor) => ({
-    id: monitor.id,
-    name: monitor.name,
-    target: monitor.target,
-    ...(monitor.tooltip ? { tooltip: monitor.tooltip } : {}),
-    ...(monitor.statusPageLink ? { statusPageLink: monitor.statusPageLink } : {}),
-    ...(monitor.preview ? { preview: monitor.preview } : {}),
-    ...(monitor.group ? { group: monitor.group } : {}),
-    ...(monitor.intervalMinutes ? { intervalMinutes: monitor.intervalMinutes } : {}),
-  }))
-}
-
 // --- health & trigger ----------------------------------------------------------
 
 app.get('/health', async (c) => {
@@ -159,7 +136,7 @@ app.get('/health', async (c) => {
 
   let nextAlarm: number | null = null
   try {
-    nextAlarm = (await getScheduler(env).ensureAlarm()).nextAlarm
+    nextAlarm = (await schedulerStub(env).ensureAlarm()).nextAlarm
   } catch (err) {
     console.log('Failed to arm monitor scheduler: ' + err)
   }
@@ -204,7 +181,7 @@ app.all('/trigger', async (c) => {
       new URL(c.req.url).searchParams.get('secret') === secret)
   if (!authorized) return json({ error: 'unauthorized' }, 401)
 
-  c.executionCtx.waitUntil(getScheduler(c.env).runNow())
+  c.executionCtx.waitUntil(schedulerStub(c.env).runNow())
   return json({ triggered: true, startedAt: Math.round(Date.now() / 1000) }, 200, {
     'cache-control': 'no-store',
   })
@@ -214,7 +191,7 @@ app.all('/trigger', async (c) => {
 
 app.get('/api/data', async (c) => {
   const env = c.env
-  const snapshot = await readLatencySnapshot(env)
+  const snapshot = await readStateSnapshot(env)
   if (snapshot.meta.value === null) return json({ error: 'No data available' }, 503)
 
   const meta: MetaRow = JSON.parse(snapshot.meta.value)
@@ -223,7 +200,7 @@ app.get('/api/data', async (c) => {
     { up: boolean | null; latency: number | null; location: string | null; message: string }
   > = {}
   for (const [id, row] of snapshot.lat) {
-    const parsed = row.value === null ? null : (JSON.parse(row.value) as LatencyRow)
+    const parsed = parseRow<LatencyRow>(row.value)
     if (!parsed) continue
     const last = lastLatencyPoint(parsed)
     summaries[id] = {
@@ -279,8 +256,8 @@ app.get('/api/badge', async (c) => {
 
   try {
     const raw = await readValue(c.env, latencyKey(monitorId))
-    const row = raw === null ? null : (JSON.parse(raw) as LatencyRow)
-    const isUp = row?.lastStatus === null || row === null ? null : row.lastStatus === 'up'
+    const row = parseRow<LatencyRow>(raw)
+    const isUp = row?.lastStatus ? row.lastStatus === 'up' : null
 
     if (isUp === null) return badge('unknown', 'lightgrey')
     if (isUp) {
@@ -386,7 +363,7 @@ app.post('/api/admin', async (c) => {
 app.get('/api/monitors', async (c) => {
   if (!(await isAdminRequest(c.req.raw, c.env))) return json({ error: '需要管理员登录' }, 401)
   const stored = await getStoredMonitors(c.env, { fresh: true })
-  return json({ monitors: sanitizeMonitors(stored), stored })
+  return json({ monitors: stored })
 })
 
 app.post('/api/monitors', async (c) => {
@@ -475,7 +452,7 @@ app.get('/', async (c) => {
           lastUpdate: meta.lastUpdate,
           overallUp: meta.overallUp,
           overallDown: meta.overallDown,
-          monitors: sanitizeMonitors(monitors),
+          monitors,
           incident: state.incident,
           startedAt: state.startedAt,
           lastPing: state.lastPing,
@@ -509,7 +486,7 @@ app.get('/m/:id', async (c) => {
   // Decode only this monitor's rows; the others' 12h arrays are irrelevant.
   const { meta, state } = await readState(c.env, { onlyId: id })
   const bootstrap = JSON.stringify({
-    monitor: sanitizeMonitors([monitor])[0],
+    monitor,
     incident: state.incident[id] ?? [],
     latency: state.latency[id] ?? [],
     startedAt: state.startedAt?.[id],
@@ -623,7 +600,7 @@ export default {
     // Cron is a supervisor only: make sure the DO alarm is armed (and
     // force-re-arm if rounds went stale).
     try {
-      const result = await getScheduler(env).healIfStale()
+      const result = await schedulerStub(env).healIfStale()
       if (result.healed) console.log('Cron healed the monitor scheduler alarm.')
     } catch (err) {
       console.log('Failed to heal monitor scheduler from cron: ' + err)

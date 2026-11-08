@@ -13,14 +13,18 @@ export class SchedulerError extends Error {
 // The scheduler DO is the single source of truth for page-managed monitors.
 // The Worker talks to it via Durable Object RPC (typed stub methods):
 // no URL routing, no JSON re-encoding, full type safety.
+export function schedulerStub(env: RuntimeBindings) {
+  const namespace = env.MONITOR_SCHEDULER_DO
+  if (!namespace) throw new Error('MONITOR_SCHEDULER_DO binding is missing')
+  return namespace.get(namespace.idFromName('default'))
+}
+
 export async function schedulerMonitors(
   env: RuntimeBindings,
   action: 'list' | 'add' | 'update' | 'delete',
   monitor?: MonitorTarget | { id: string }
 ): Promise<MonitorTarget[]> {
-  const namespace = env.MONITOR_SCHEDULER_DO
-  if (!namespace) throw new Error('MONITOR_SCHEDULER_DO binding is missing')
-  const stub = namespace.get(namespace.idFromName('default'))
+  const stub = schedulerStub(env)
 
   try {
     switch (action) {

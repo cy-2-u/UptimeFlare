@@ -23,14 +23,10 @@ function statusOf(
   incident: Record<string, IncidentRecord[]>,
   lastStatus: Record<string, 'up' | 'down' | null>
 ) {
-  const incidents = incident[monitor.id]
   // An open incident means down even if the latency row has not caught up.
-  if (incidents && incidents.length > 0 && incidents[incidents.length - 1].end === null) {
-    return 'down'
-  }
-  // Otherwise the check-round status is authoritative: null (never checked)
-  // renders as pending.
-  return lastStatus[monitor.id] === 'up' ? 'up' : lastStatus[monitor.id] === 'down' ? 'down' : 'pending'
+  const incidents = incident[monitor.id]
+  if (incidents?.length && incidents[incidents.length - 1].end === null) return 'down'
+  return lastStatus[monitor.id] ?? 'pending'
 }
 
 function groupIcon(group: string) {

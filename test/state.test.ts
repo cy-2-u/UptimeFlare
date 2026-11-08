@@ -11,7 +11,6 @@ import {
   changeFrom,
   commitChanges,
   deleteRows,
-  readLatencySnapshot,
   readStateSnapshot,
   readValue,
   setRuntimeValue,

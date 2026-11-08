@@ -8,8 +8,7 @@ import {
   commitChanges,
   incidentKey,
   latencyKey,
-  parseIncidentRow,
-  parseLatencyRow,
+  parseRow,
   readStateSnapshot,
   type IncidentRow,
   type LatencyRow,
@@ -41,12 +40,12 @@ export async function runChecks(env: RuntimeEnv, authoritativeMonitors?: Monitor
 
   const latRows = new Map<string, LatencyRow>()
   for (const [id, row] of snapshot.lat) {
-    const parsed = parseLatencyRow(row)
+    const parsed = parseRow<LatencyRow>(row.value)
     if (parsed) latRows.set(id, parsed)
   }
   const incRows = new Map<string, IncidentRow>()
   for (const [id, row] of snapshot.inc) {
-    const parsed = parseIncidentRow(row)
+    const parsed = parseRow<IncidentRow>(row.value)
     if (parsed) incRows.set(id, parsed)
   }
 
