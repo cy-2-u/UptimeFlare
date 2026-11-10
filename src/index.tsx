@@ -4,6 +4,7 @@ import type { IncidentRecord, IncidentRow, LatencyRecord, MonitorTarget } from '
 import type { RuntimeBindings } from './types'
 import { maintenances, pageConfig } from './config'
 import {
+  META_KEY,
   emptyMeta,
   incidentsToRecords,
   lastLatencyPoint,
@@ -143,7 +144,7 @@ app.get('/health', async (c) => {
 
   let meta: MetaRow = emptyMeta()
   try {
-    const metaRaw = await readValue(env, 'state:meta')
+    const metaRaw = await readValue(env, META_KEY)
     if (metaRaw !== null) meta = JSON.parse(metaRaw) as MetaRow
   } catch (err) {
     console.log('Failed to read meta row: ' + err)
@@ -485,14 +486,14 @@ app.get('/m/:id', async (c) => {
 
   // Decode only this monitor's rows; the others' 12h arrays are irrelevant.
   const { meta, state } = await readState(c.env, { onlyId: id })
-  const bootstrap = JSON.stringify({
+  const bootstrap = {
     monitor,
     incident: state.incident[id] ?? [],
     latency: state.latency[id] ?? [],
     startedAt: state.startedAt?.[id],
     lastUpdate: meta.lastUpdate,
     maintenances,
-  }).replace(/</g, '\\u003c')
+  }
 
   return c.html(
     <Layout

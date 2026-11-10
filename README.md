@@ -78,7 +78,7 @@ npm test
 ## 测试
 
 ```bash
-npm test            # 30 个用例：状态转换/间隔调度/CAS 原子性/调度自愈/通知文案
+npm test            # 31 个用例：状态转换/间隔调度/CAS 原子性/调度自愈/通知文案
 npx tsc --noEmit
 ```
 

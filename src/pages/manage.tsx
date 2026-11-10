@@ -1,4 +1,5 @@
 import type { MonitorTarget } from '../types'
+import { BootstrapScript } from './bootstrap'
 
 const TIMEOUT_OPTIONS = [3, 5, 10, 15, 30, 60]
 const INTERVAL_OPTIONS = [10, 20, 30, 60]
@@ -168,18 +169,7 @@ export function ManagePage(props: { monitors: MonitorTarget[] }) {
                       <div class="row-target">{monitor.target}</div>
                     </div>
                     <div class="row-actions">
-                      <button
-                        type="button"
-                        class="btn ghost sm"
-                        data-edit={monitor.id}
-                        data-name={monitor.name}
-                        data-target={monitor.target}
-                        data-group={monitor.group || '核心服务'}
-                        data-preview={monitor.preview || ''}
-                        data-link={monitor.statusPageLink || ''}
-                        data-timeout={monitor.timeout ?? 4500}
-                        data-interval={monitor.intervalMinutes ?? 10}
-                      >
+                      <button type="button" class="btn ghost sm" data-edit={monitor.id}>
                         编辑
                       </button>
                       <button type="button" class="btn danger sm" data-remove={monitor.id}>
@@ -194,14 +184,11 @@ export function ManagePage(props: { monitors: MonitorTarget[] }) {
         </div>
       </section>
 
-      <script
-        type="application/json"
-        id="bootstrap"
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify({
-            timeoutOptions: TIMEOUT_OPTIONS,
-            intervalOptions: INTERVAL_OPTIONS,
-          }).replace(/</g, '\\u003c'),
+      <BootstrapScript
+        data={{
+          timeoutOptions: TIMEOUT_OPTIONS,
+          intervalOptions: INTERVAL_OPTIONS,
+          monitors: props.monitors,
         }}
       />
     </div>

@@ -164,3 +164,13 @@ test('healIfStale re-arms only when the alarm is missing, expired or the data is
   assert.equal((await scheduler.healIfStale()).healed, false)
   assert.equal(storage.currentAlarm, before)
 })
+
+test('a corrupt meta row must not silence the supervisor', async () => {
+  const { storage, env, db } = fixture()
+  const scheduler = new SchedulerState(storage, env, async () => {})
+  await scheduler.ensureAlarm()
+
+  db.rows.set(META_KEY, 'not-json{')
+  assert.equal((await scheduler.healIfStale()).healed, true)
+  assert.ok(storage.currentAlarm! > Date.now())
+})

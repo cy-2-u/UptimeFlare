@@ -40,8 +40,14 @@ export class SchedulerState {
     const alarm = await this.storage.getAlarm()
     if (alarm !== null && alarm > Date.now()) {
       const metaRaw = await readValue(this.env, META_KEY).catch(() => null)
-      const lastUpdate = metaRaw ? ((JSON.parse(metaRaw).lastUpdate as number) ?? 0) : 0
-      if (lastUpdate === 0 || Date.now() / 1000 - lastUpdate < STALE_AFTER_SEC) {
+      if (metaRaw === null) return { healed: false }
+      let lastUpdate = 0
+      try {
+        lastUpdate = (JSON.parse(metaRaw).lastUpdate as number) ?? 0
+      } catch {
+        // A corrupt meta row must not silence the supervisor: treat as stale.
+      }
+      if (lastUpdate !== 0 && Date.now() / 1000 - lastUpdate < STALE_AFTER_SEC) {
         return { healed: false }
       }
     }
@@ -112,8 +118,8 @@ export class SchedulerState {
       if (!monitors.some((item) => item.id === id) && !pending.includes(id)) {
         throw new SchedulerError('只能删除在页面中添加的监测项', 404)
       }
-      // A failed state read means D1 may be unavailable; abort so we never
-      // forget a monitor whose history rows cannot be cleaned up.
+      // Prove D1 is reachable before committing: a failed read means history
+      // rows cannot be cleaned up, so we must not forget this monitor.
       await readValue(this.env, META_KEY)
       const next = monitors.filter((item) => item.id !== id)
       await this.storage.transaction(async (txn) => {

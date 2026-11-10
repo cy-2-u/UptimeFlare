@@ -2,7 +2,7 @@ import type { MonitorTarget, RuntimeEnv } from './types'
 import { workerConfig } from './config'
 import { checkMonitor, type CheckOutcome } from './checks'
 import { dispatchNotices } from './notify'
-import { applyRound, isMonitorDue, type PendingNotice } from './stateops'
+import { applyRound, isMonitorDue } from './stateops'
 import {
   changeFrom,
   commitChanges,
@@ -15,8 +15,6 @@ import {
 } from './state'
 import { getStoredMonitors } from './monitors'
 import { getWorkerLocation } from './util'
-
-export type { PendingNotice }
 
 const MONITOR_CHECK_CONCURRENCY = 4
 

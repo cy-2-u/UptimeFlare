@@ -4,14 +4,9 @@ node_modules/
 # build artifacts
 dist/
 wrangler.deploy.toml
-.next/
 
 # wrangler local state
 .wrangler/
-
-# generated types
-next-env.d.ts
-worker-configuration.d.ts
 
 # misc
 .DS_Store

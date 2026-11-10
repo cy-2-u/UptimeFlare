@@ -1,5 +1,6 @@
 import type { IncidentRecord, MonitorTarget } from '../types'
 import { hostnameOf } from '../util'
+import { BootstrapScript } from './bootstrap'
 
 // Single-monitor view (iframe friendly, linked as /m/<id>). The shell is
 // server-rendered; bars/sparkline/badges are filled by app.js from the
@@ -11,7 +12,7 @@ export function DetailPage(props: {
     latency: Record<string, { time: number; ping: number; loc: string }[]>
     lastStatus?: Record<string, 'up' | 'down' | null>
   }
-  bootstrap: string
+  bootstrap: Record<string, unknown>
 }) {
   const { monitor, state } = props
   const incidents = state.incident[monitor.id]
@@ -83,11 +84,7 @@ export function DetailPage(props: {
         </article>
       )}
 
-      <script
-        type="application/json"
-        id="bootstrap"
-        dangerouslySetInnerHTML={{ __html: props.bootstrap }}
-      />
+      <BootstrapScript data={props.bootstrap} />
     </div>
   )
 }

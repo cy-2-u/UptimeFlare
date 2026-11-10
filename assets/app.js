@@ -843,13 +843,12 @@
     var loading = false
     var editingId = ''
 
-    // Existing groups for the suggestion popup (list badges + default).
+    // Existing groups for the suggestion popup (defaults + bootstrap list).
     var groups = Array.from(
       new Set(
         ['核心服务'].concat(
-          $$('[data-row]').map(function (row) {
-            var badge = $$('.badge', row)[0]
-            return badge ? badge.textContent : '核心服务'
+          bootstrap.monitors.map(function (monitor) {
+            return monitor.group || '核心服务'
           })
         )
       )
@@ -952,24 +951,29 @@
       setMessage('')
     }
 
+    // Edit fills the form from the bootstrap monitor list (single data source).
     $$('[data-edit]').forEach(function (button) {
       button.addEventListener('click', function () {
         if (editingId === button.dataset.edit) {
           clearEditMode()
           return
         }
-        setEditing(button.dataset.edit)
-        form.elements.name.value = button.dataset.name
-        form.elements.target.value = button.dataset.target
-        form.elements.group.value = button.dataset.group
-        form.elements.preview.value = button.dataset.preview
+        var monitor = bootstrap.monitors.filter(function (m) {
+          return m.id === button.dataset.edit
+        })[0]
+        if (!monitor) return
+        setEditing(monitor.id)
+        form.elements.name.value = monitor.name
+        form.elements.target.value = monitor.target
+        form.elements.group.value = monitor.group || '核心服务'
+        form.elements.preview.value = monitor.preview || ''
         form.elements.statusPageLink.value =
-          button.dataset.link && button.dataset.link !== button.dataset.target
-            ? button.dataset.link
+          monitor.statusPageLink && monitor.statusPageLink !== monitor.target
+            ? monitor.statusPageLink
             : ''
-        intervalDropdown.value = button.dataset.interval
-        timeoutDropdown.value = String(Math.round(Number(button.dataset.timeout) / 1000))
-        setMessage('正在编辑「' + button.dataset.name + '」，修改不会影响历史数据。')
+        intervalDropdown.value = monitor.intervalMinutes || 10
+        timeoutDropdown.value = String(Math.round((monitor.timeout || 4500) / 1000))
+        setMessage('正在编辑「' + monitor.name + '」，修改不会影响历史数据。')
         form.scrollIntoView({ behavior: 'smooth', block: 'start' })
       })
     })

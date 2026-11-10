@@ -1,5 +1,6 @@
 import type { IncidentRecord, MaintenanceConfig, MonitorTarget } from '../types'
 import { hostnameOf } from '../util'
+import { BootstrapScript } from './bootstrap'
 
 export type StatusBootstrap = {
   lastUpdate: number
@@ -228,13 +229,7 @@ export function StatusPage(props: {
         <div class="dlg-body" data-history-body />
       </dialog>
 
-      <script
-        type="application/json"
-        id="bootstrap"
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify(props.bootstrap).replace(/</g, '\\u003c'),
-        }}
-      />
+      <BootstrapScript data={props.bootstrap} />
     </>
   )
 }

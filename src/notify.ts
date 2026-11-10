@@ -1,7 +1,7 @@
 import type { MonitorTarget, Notification } from './types'
 import { maintenances, workerConfig } from './config'
 import { fetchTimeout } from './util'
-import type { PendingNotice } from './round'
+import type { PendingNotice } from './stateops'
 
 // 通知区域修改开始
 // 推送渠道：「及时通知」(timelynotify) —— GET {BASE}/{标题}/{正文}?icon=&group=&ttl=&sound=
