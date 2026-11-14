@@ -73,13 +73,13 @@ async function page(request: Request, env: Env, ctx: ExecutionContext, path: str
     if (result.status !== 200) return redirect('/login')
     const monitors = (JSON.parse(result.body) as { monitors: Monitor[] }).monitors
     const boot = { timeoutOptions: TIMEOUT_OPTIONS, intervalOptions: INTERVAL_OPTIONS, monitors: monitors.map(toTarget) }
-    return html(layout({ title: '站点管理', isAdmin: true, manage: true, boot, links: settings.links }, managePage(monitors)), 'private, no-store')
+    return html(layout({ title: '站点管理', site: settings.title, isAdmin: true, manage: true, boot, links: settings.links }, managePage(monitors)), 'private, no-store')
   }
   if (path === '/login') {
     if (isAdmin) return redirect('/manage')
     const info = admin ?? await adminInfo()
     const hasAdmin = info?.hasAdmin === true
-    return html(layout({ title: hasAdmin ? '管理员登录' : '设置管理员', isAdmin: false, links: settings.links }, loginPage(hasAdmin)), 'private, no-store')
+    return html(layout({ title: hasAdmin ? '管理员登录' : '设置管理员', site: settings.title, isAdmin: false, login: true, links: settings.links }, loginPage(hasAdmin)), 'private, no-store')
   }
 
   // / and /m/:id — anonymous visitors share one edge-cached render; a valid
@@ -94,13 +94,13 @@ async function page(request: Request, env: Env, ctx: ExecutionContext, path: str
   const result = await backend.snapshot(id)
   if (result.error) {
     if (result.error.status !== 404) throw new HttpError(result.error.message, result.error.status)
-    return html(layout({ title: '未找到监测项', isAdmin, links: settings.links }, detailPage(null, false, id ?? '')), 'private, no-store', 404)
+    return html(layout({ title: '未找到监测项', site: settings.title, isAdmin, links: settings.links }, detailPage(null, false, id ?? '')), 'private, no-store', 404)
   }
   const snap = result.data!
   if (id) {
     const item = snap.monitors[0]
     const boot: DetailBoot = { monitor: toTarget(item), up: item.up, incident: item.incidents, latency: item.latency ?? [], ...(item.startedAt > 0 ? { startedAt: item.startedAt } : {}), lastUpdate: snap.updatedAt, maintenances: settings.maintenances }
-    const body = layout({ title: `${item.name} - ${settings.title}`, isAdmin, boot, links: settings.links }, detailPage(boot, true, id))
+    const body = layout({ title: `${item.name} - ${settings.title}`, site: settings.title, isAdmin, boot, links: settings.links }, detailPage(boot, true, id))
     return finish(body, key, isAdmin, ctx)
   }
   const boot: StatusBoot = {
@@ -115,7 +115,7 @@ async function page(request: Request, env: Env, ctx: ExecutionContext, path: str
     lastPing: Object.fromEntries(snap.monitors.filter(m => m.ping !== null).map(m => [m.id, m.ping as number])),
     maintenances: settings.maintenances,
   }
-  return finish(layout({ title: settings.title, isAdmin, boot, links: settings.links }, statusPage(boot)), key, isAdmin, ctx)
+  return finish(layout({ title: settings.title, site: settings.title, isAdmin, boot, links: settings.links }, statusPage(boot)), key, isAdmin, ctx)
 }
 function finish(body: string, key: string, isAdmin: boolean, ctx: ExecutionContext) {
   const response = html(body, isAdmin ? 'private, no-store' : 'public, max-age=0, s-maxage=30')

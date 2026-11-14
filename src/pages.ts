@@ -14,12 +14,15 @@ const BRAND = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" strok
 const STATUS_LABEL: Record<string, string> = { up: '运行正常', down: '宕机', pending: '等待检查' }
 const groupIcon = (group: string) => group.includes('基础') ? '🖥' : group.includes('AI') ? '☁' : group.includes('工具') ? '🧰' : '🗔'
 
-// Page shell. The nav is rendered from the validated session — no client swap,
-// no flash, no extra fetch. On the manage page "站点管理" becomes "返回".
-export function layout(opts: { title: string; isAdmin: boolean; manage?: boolean; boot?: unknown; links?: { link: string; label: string }[] }, content: string) {
+// Page shell. `title` is the per-page document title; `site` is the brand name
+// shown in the topbar and footer. The nav is rendered from the validated
+// session — no client swap, no flash, no extra fetch. On the manage page
+// "站点管理" becomes "返回"; the login page renders no nav button at all.
+export function layout(opts: { title: string; site?: string; isAdmin: boolean; manage?: boolean; login?: boolean; boot?: unknown; links?: { link: string; label: string }[] }, content: string) {
+  const site = opts.site ?? '服务状态'
   const nav = opts.isAdmin
     ? `${opts.manage ? `<a href="/" class="btn ghost sm">← 返回</a>` : `<a href="/manage" class="btn ghost sm">站点管理</a>`}<button type="button" class="btn ghost sm danger-hover" data-action="logout">退出</button>`
-    : `<a href="/login" class="btn primary sm">登录</a>`
+    : opts.login ? '' : `<a href="/login" class="btn primary sm">登录</a>`
   const links = (opts.links ?? []).map(link => `<a href="${esc(link.link)}" target="_blank" rel="noopener noreferrer">${esc(link.label)}</a>`).join('')
   return `<!doctype html>
 <html lang="zh-CN">
@@ -33,13 +36,13 @@ export function layout(opts: { title: string; isAdmin: boolean; manage?: boolean
 <body>
 <div class="shell">
 <header class="topbar">
-<a href="/" class="brand"><span class="brand-mark" aria-hidden="true">${BRAND}</span><span>${esc(opts.title)}</span></a>
+<a href="/" class="brand"><span class="brand-mark" aria-hidden="true">${BRAND}</span><span>${esc(site)}</span></a>
 <nav class="topnav">${nav}</nav>
 </header>
 <div class="orb orb-a" aria-hidden="true"></div>
 <div class="orb orb-b" aria-hidden="true"></div>
 <main>${content}</main>
-<footer class="footer"><p>© ${new Date().getFullYear()} ${esc(opts.title)} · 持续监测</p><div class="footer-links">${links}</div></footer>
+<footer class="footer"><p>© ${new Date().getFullYear()} ${esc(site)} · 持续监测</p><div class="footer-links">${links}</div></footer>
 </div>
 ${opts.boot === undefined ? '' : bootScript(opts.boot)}
 <script type="module" src="/app.js"></script>
