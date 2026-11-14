@@ -8,7 +8,7 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 const repo = 'cy-2-u/UptimeFlare'
 const message = process.argv[2]
 if (!message || /[\r\n]/.test(message)) throw Error('Usage: node scripts/push-root.mjs "why this change is needed"')
-const ignored = new Set(['node_modules', '.wrangler', 'dist', '.git', 'new'])
+const ignored = new Set(['node_modules', '.wrangler', '.git'])
 const local = name => name === '.dev.vars' || name.startsWith('.dev.vars.') || name === 'wrangler.deploy.toml' || name.endsWith('.log') || name === '.DS_Store'
 const token = execFileSync('gh', ['auth', 'token'], { encoding: 'utf8' }).trim()
 async function api(endpoint, method = 'GET', data) {

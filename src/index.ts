@@ -3,7 +3,7 @@ import { Engine } from './engine'
 import { settings } from './config'
 import { importLegacy } from './legacy'
 import { detailPage, INTERVAL_OPTIONS, layout, loginPage, managePage, statusPage, TIMEOUT_OPTIONS, type DetailBoot, type StatusBoot } from './pages'
-import { HttpError, type Monitor, type Storage } from './types'
+import { HttpError, type Incident, type Monitor, type Point, type Storage } from './types'
 
 type Env = {
   MONITOR_SCHEDULER_DO: DurableObjectNamespace<MonitorScheduler>
@@ -52,7 +52,7 @@ const stub = (env: Env) => env.MONITOR_SCHEDULER_DO.get(env.MONITOR_SCHEDULER_DO
 const toTarget = (m: Monitor) => ({ id: m.id, name: m.name, target: m.target, group: m.group, timeout: m.timeout, intervalMinutes: m.intervalMinutes, ...(m.preview ? { preview: m.preview } : {}), ...(m.statusPageLink ? { statusPageLink: m.statusPageLink } : {}), ...(m.tooltip ? { tooltip: m.tooltip } : {}) })
 
 type AdminInfo = { hasAdmin: boolean; isAuthenticated: boolean }
-type SnapshotItem = Monitor & { startedAt: number; checkedAt: number; up: boolean | null; error: string; notified: boolean; incidents: StatusBoot['incident'][string]; latency?: { time: number; ping: number; loc: string }[]; ping: number | null; location: string | null }
+type SnapshotItem = Monitor & { startedAt: number; checkedAt: number; up: boolean | null; error: string; notified: boolean; incidents: Incident[]; latency?: Point[]; ping: number | null; location: string | null }
 type Snapshot = { title: string; updatedAt: number; up: number; down: number; monitors: SnapshotItem[] }
 
 async function page(request: Request, env: Env, ctx: ExecutionContext, path: string): Promise<Response> {
@@ -94,13 +94,13 @@ async function page(request: Request, env: Env, ctx: ExecutionContext, path: str
   const result = await backend.snapshot(id)
   if (result.error) {
     if (result.error.status !== 404) throw new HttpError(result.error.message, result.error.status)
-    return html(layout({ title: '未找到监测项', site: settings.title, isAdmin, links: settings.links }, detailPage(null, false, id ?? '')), 'private, no-store', 404)
+    return html(layout({ title: '未找到监测项', site: settings.title, isAdmin, links: settings.links }, detailPage(null, id ?? '')), 'private, no-store', 404)
   }
   const snap = result.data!
   if (id) {
     const item = snap.monitors[0]
     const boot: DetailBoot = { monitor: toTarget(item), up: item.up, incident: item.incidents, latency: item.latency ?? [], ...(item.startedAt > 0 ? { startedAt: item.startedAt } : {}), lastUpdate: snap.updatedAt, maintenances: settings.maintenances }
-    const body = layout({ title: `${item.name} - ${settings.title}`, site: settings.title, isAdmin, boot, links: settings.links }, detailPage(boot, true, id))
+    const body = layout({ title: `${item.name} - ${settings.title}`, site: settings.title, isAdmin, boot, links: settings.links }, detailPage(boot, id))
     return finish(body, key, isAdmin, ctx)
   }
   const boot: StatusBoot = {

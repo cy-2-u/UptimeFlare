@@ -517,7 +517,17 @@ function setupDropdown(box, options, onChange) {
     if (open && !box.contains(event.target)) setOpen(false)
   }
   function onKey(event) {
-    if (open && event.key === 'Escape') setOpen(false)
+    if (!open) return
+    if (event.key === 'Escape') setOpen(false)
+    else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      // Focus starts on the trigger; arrows walk the menu, Enter activates
+      // natively. Focus-visible outlines make the position obvious.
+      const buttons = $$('button', menu)
+      const index = buttons.indexOf(document.activeElement)
+      const next = event.key === 'ArrowDown' ? Math.min(buttons.length - 1, index + 1) : Math.max(0, index - 1)
+      buttons[index < 0 ? 0 : next].focus()
+      event.preventDefault()
+    }
   }
   function setOpen(next) {
     if (next) {

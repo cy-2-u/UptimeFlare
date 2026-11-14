@@ -18,8 +18,7 @@ const groupIcon = (group: string) => group.includes('基础') ? '🖥' : group.i
 // shown in the topbar and footer. The nav is rendered from the validated
 // session — no client swap, no flash, no extra fetch. On the manage page
 // "站点管理" becomes "返回"; the login page renders no nav button at all.
-export function layout(opts: { title: string; site?: string; isAdmin: boolean; manage?: boolean; login?: boolean; boot?: unknown; links?: { link: string; label: string }[] }, content: string) {
-  const site = opts.site ?? '服务状态'
+export function layout(opts: { title: string; site: string; isAdmin: boolean; manage?: boolean; login?: boolean; boot?: unknown; links?: { link: string; label: string }[] }, content: string) {
   const nav = opts.isAdmin
     ? `${opts.manage ? `<a href="/" class="btn ghost sm">← 返回</a>` : `<a href="/manage" class="btn ghost sm">站点管理</a>`}<button type="button" class="btn ghost sm danger-hover" data-action="logout">退出</button>`
     : opts.login ? '' : `<a href="/login" class="btn primary sm">登录</a>`
@@ -36,13 +35,13 @@ export function layout(opts: { title: string; site?: string; isAdmin: boolean; m
 <body>
 <div class="shell">
 <header class="topbar">
-<a href="/" class="brand"><span class="brand-mark" aria-hidden="true">${BRAND}</span><span>${esc(site)}</span></a>
+<a href="/" class="brand"><span class="brand-mark" aria-hidden="true">${BRAND}</span><span>${esc(opts.site)}</span></a>
 <nav class="topnav">${nav}</nav>
 </header>
 <div class="orb orb-a" aria-hidden="true"></div>
 <div class="orb orb-b" aria-hidden="true"></div>
 <main>${content}</main>
-<footer class="footer"><p>© ${new Date().getFullYear()} ${esc(site)} · 持续监测</p><div class="footer-links">${links}</div></footer>
+<footer class="footer"><p>© ${new Date().getFullYear()} ${esc(opts.site)} · 持续监测</p><div class="footer-links">${links}</div></footer>
 </div>
 ${opts.boot === undefined ? '' : bootScript(opts.boot)}
 <script type="module" src="/app.js"></script>
@@ -98,7 +97,7 @@ export function statusPage(boot: StatusBoot) {
   return `<section class="hero">
 <div class="hero-left hero-enter">
 <div class="pulse-chip"><span class="pulse-dot${overall.tone ? ' ' + overall.tone : ''}" data-overall-dot></span><span>持续监测中</span></div>
-<h1 class="hero-title">${esc(boot.title ?? '服务状态')}</h1>
+<h1 class="hero-title">${esc(boot.title)}</h1>
 <div class="overall${overall.tone ? ' ' + overall.tone : ''}"><span data-overall-icon>${overall.icon}</span><span data-overall-text>${overall.label}</span></div>
 <div class="hero-actions"><button type="button" class="btn ghost sm" data-open-incidents>🕘 历史故障</button></div>
 </div>
@@ -123,8 +122,8 @@ export function statusPage(boot: StatusBoot) {
 
 export type DetailBoot = { monitor: Monitor; up: boolean | null; incident: Incident[]; latency: { time: number; ping: number; loc: string }[]; startedAt?: number; lastUpdate: number; maintenances: Maintenance[] }
 
-export function detailPage(boot: DetailBoot | null, found: boolean, id: string) {
-  if (!found || !boot) return `<div class="detail-wrap"><a href="/" class="back">← 返回状态页</a><p class="empty">未找到监测项：${esc(id)}</p></div>`
+export function detailPage(boot: DetailBoot | null, id: string) {
+  if (!boot) return `<div class="detail-wrap"><a href="/" class="back">← 返回状态页</a><p class="empty">未找到监测项：${esc(id)}</p></div>`
   const hasData = boot.incident.length > 0 || boot.latency.length > 0
   if (!hasData) return `<div class="detail-wrap"><a href="/" class="back">← 返回状态页</a><article class="detail-card"><h2 class="detail-name">${esc(boot.monitor.name)}</h2><p class="muted">暂无监测数据。</p></article></div>`
   const isUp = boot.up !== false
@@ -144,7 +143,7 @@ export function managePage(monitors: Monitor[]) {
   const rows = monitors.length === 0
     ? `<p class="empty-state">当前还没有网站。</p>`
     : monitors.map(monitor => `<div class="monitor-row" data-row="${esc(monitor.id)}"><div class="min-w-0"><div class="row-title"><strong>${esc(monitor.name)}</strong><span class="badge">${esc(monitor.group || '核心服务')}</span><span class="badge">${monitor.intervalMinutes ?? 10} 分钟</span></div><div class="row-target">${esc(monitor.target)}</div></div><div class="row-actions"><button type="button" class="btn ghost sm" data-edit="${esc(monitor.id)}">编辑</button><button type="button" class="btn danger sm" data-remove="${esc(monitor.id)}">删除</button></div></div>`).join('')
-  const dropdown = (name: string, label: string, initial: string) => `<div class="relative" data-${name}-box><button type="button" class="dropdown" data-dropdown="${name}" aria-haspopup="listbox" aria-expanded="false"><span data-dropdown-label>${label}</span>${CHEV}</button><ul class="menu" data-menu="${name}" hidden></ul></div>`
+  const dropdown = (name: string, label: string) => `<div class="relative" data-${name}-box><button type="button" class="dropdown" data-dropdown="${name}" aria-haspopup="listbox" aria-expanded="false"><span data-dropdown-label>${label}</span>${CHEV}</button><ul class="menu" data-menu="${name}" hidden></ul></div>`
   return `<div class="manage-wrap"><a href="/" class="back">← 返回状态页</a>
 <section class="manage-card">
 <div class="manage-grid">
@@ -156,10 +155,10 @@ export function managePage(monitors: Monitor[]) {
 <label class="field"><span>网站地址</span><input name="target" placeholder="https://example.com" inputmode="url"></label>
 <div class="field-row">
 <label class="field"><span>分组</span><div class="relative" data-group-box><input name="group" placeholder="核心服务" autocomplete="off" data-group-input><button type="button" class="chevron-btn" aria-label="展开分组建议" aria-expanded="false" data-group-toggle>${CHEV}</button><ul class="menu" data-group-suggest hidden></ul></div></label>
-<label class="field"><span>检查间隔</span>${dropdown('interval', '10 分钟', '')}</label>
+<label class="field"><span>检查间隔</span>${dropdown('interval', '10 分钟')}</label>
 </div>
 <div class="field-row">
-<label class="field"><span>超时时间</span>${dropdown('timeout', '3 秒', '')}</label>
+<label class="field"><span>超时时间</span>${dropdown('timeout', '3 秒')}</label>
 <label class="field"><span>封面图 URL</span><input name="preview" placeholder="留空自动生成" inputmode="url"></label>
 </div>
 <label class="field"><span>访问链接</span><input name="statusPageLink" placeholder="留空使用网站地址" inputmode="url"></label>
@@ -181,7 +180,7 @@ export function loginPage(hasAdmin: boolean) {
 <section class="login-card hero-enter">
 <h1>${isSetup ? '设置管理员' : '管理员登录'}</h1>
 <p class="muted">${isSetup ? '创建账号，开始管理站点。' : '登录你的管理账号。'}</p>
-<form class="form" id="login-form" data-has-admin="${isSetup ? 'false' : 'true'}">
+<form class="form" id="login-form" data-has-admin="${hasAdmin}">
 <label class="field"><span>账号</span><input name="username" autocomplete="username"></label>
 <label class="field"><span>密码</span><input name="password" type="password" autocomplete="${isSetup ? 'new-password' : 'current-password'}"></label>
 <button type="submit" class="btn primary wide" data-submit disabled>${isSetup ? '创建管理员' : '登录'}</button>
