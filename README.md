@@ -1,87 +1,59 @@
 # UptimeFlare
 
-跑在 Cloudflare Workers 免费额度上的网站可用性监控 + 状态页。单个 Worker
-承载一切：Hono JSX SSR 页面、JSON API、静态资产、Durable Object 监测调度——
-无独立构建链、无 Pages 项目、无 Terraform/Python。
+个人服务状态页，运行在 Cloudflare Workers 免费套餐上。每十分钟检查一次 HTTP/HTTPS 服务，首次失败后三秒复查；记录故障与恢复，并发送通知。
 
-**在线示例**：<https://w.chaoyang.us.ci>
+一个 SQLite Durable Object 承载全部运行时状态（监测列表、每站点历史、管理员凭证、通知队列），服务端直出全部页面；运行期不使用 KV 或 D1，无生产依赖。旧版（D1/KV 存储）部署时自动迁移。
 
-## 功能
+## 部署
 
-- HTTP 可用性监测：每站点独立检查间隔（10/20/30/60 分钟）与超时；单次失败二次确认，网络抖动不误报
-- 状态页：分组卡片、30 天可用率条、90 天历史、12 小时响应时间曲线、历史故障弹窗（按站点/月份筛选）
-- 管理：首次访问 `/login` 创建管理员，`/manage` 增删改站点；编辑不改 ID，历史全保留
-- 通知：宕机/恢复/错误变化即时推送（timelynotify GET 渠道，改常量即可换同类服务）
-- 对外接口：Shields.io 徽章 `/api/badge`、轻量摘要 `/api/data`（CORS *）、全量状态 `/api/status`
-- 免费额度友好：未到期监测整轮跳过、零写入；Cron 仅作监督兜底，主调度靠 DO alarm
+需要 Node.js 24 和 Cloudflare 账号。首次部署前修改 `src/config.ts` 中的标题、链接、维护计划和通知区域。
 
-## 架构
-
-```
-┌─ Worker: uptimeflare_worker（唯一运行单元）───────────────────┐
-│  Hono SSR 页面:  /            状态页                           │
-│                  /m/:id       单监控视图（iframe 友好）         │
-│                  /login /manage  管理入口（会话保护）           │
-│  JSON API:       /api/data     轻量摘要（CORS *，前端轮询用）  │
-│                  /api/status   全量状态（同源，外部消费）      │
-│                  /api/badge    Shields.io 徽章                 │
-│                  /api/monitors|admin   管理接口                │
-│  运维:           /health      健康检查（兼上弦闹钟）          │
-│                  /trigger     手动触发（需 secret）           │
-│  静态资产:       /app.css /app.js /favicon.*（免费，不计数）   │
-│                                                                │
-│  MonitorScheduler DO（闹钟主调度，每 10 分钟自续）             │
-│    ├─ 类型化 RPC: list/add/update/deleteMonitor 等直调方法     │
-│    └─ runChecks: 按 due 过滤 → 并发检查（失败 2 次确认）       │
-│         → 单批 CAS 原子写 D1 → 写成功后才发通知                 │
-│  Cron 0 * * * *（每小时，仅监督：闹钟缺失/过期/停滞时重新上弦）│
-└────────────────────────────────────────────────────────────────┘
-```
-
-### 关键设计
-
-- **先持久化后通知**：状态写入 D1（批量 CAS 原子生效）成功后才发通知，失败的轮次什么都不发，下一轮重新判定。
-- **页面状态与检查轮同源**：页面状态取自延迟行的 `lastStatus`（与汇总计数同一来源），进行中的故障优先判定宕机，从未检查的显示"等待检查"。
-- **时间渲染全在客户端**：SSR 只输出与时区无关的结构，"x 前"、柱状图、事件时间由 `app.js` 按访客时区填充，无 hydration、无框架运行时。
-- **D1 行式存储**：`state:meta` / `state:inc:<id>`（事件，保留 90 天）/ `state:lat:<id>`（延迟 + 最近状态，保留 12 小时）；事件行只在变化时写。行布局、hex/RLE 编解码与 CAS 读写统一在 `src/state.ts`。
-
-## 部署（部署到你自己的 Cloudflare 账户）
-
-1. Fork 或导入本仓库。
-2. 仓库 Secrets 配置 `CLOUDFLARE_API_TOKEN`（`CLOUDFLARE_ACCOUNT_ID` 可选，缺省自动获取）。
-3. 推送到 `main` 即自动部署（Actions）：`npm ci` → 测试 → dry-run 构建 → 确保 D1/表 → 注入 D1 ID → `wrangler deploy` → `/health` 冒烟。
-4. 部署完成后访问 `https://uptimeflare_worker.<你的 workers.dev 子域>.workers.dev`，首次进入 `/login` 创建管理员。
-5. 自定义域名在 Cloudflare Dashboard → Worker → Settings → Domains & Routes 绑定。
-
-**从旧版 UptimeFlare 升级**：Worker 名、DO 类名与迁移台账不变，已有站点、历史数据、管理员凭证原样保留，无迁移步骤。
-
-## 配置
-
-- `src/config.ts`：页面标题/链接/图标（`pageConfig`）、通知（`workerConfig.notification`：timeZone、gracePeriod、skipNotificationIds、skipErrorChangeNotification）、维护窗口（`maintenances`）。
-- 通知渠道：`src/notify.ts`「通知区域修改开始/结束」标记内改常量即可换渠道（`PUSH_BASE_URL`、`PUSH_ICON`、`PUSH_GROUP`、`PUSH_TTL_SEC`、`PUSH_SOUND`）；标题/正文经 URL 编码后作为 GET 路径段。
-
-## 本地开发
-
-```bash
-npm install
-npx wrangler d1 execute uptimeflare_d1 --local --file scripts/init.sql
-npm run dev        # http://127.0.0.1:8787（--test-scheduled 已开）
+```sh
+npm ci
+npm run check
 npm test
+npm run deploy
 ```
 
-手动触发一轮检查：`.dev.vars`（不入库）里放 `MONITOR_TRIGGER_SECRET=<值>`，
-然后 `curl "http://127.0.0.1:8787/trigger?secret=<值>"`。
+部署使用环境变量 `CLOUDFLARE_API_TOKEN`，可选 `CLOUDFLARE_ACCOUNT_ID`。检测到旧版 `uptimeflare_d1` 时自动绑定并只读导入一次历史数据；导入失败会推迟到下次唤醒重试，不影响现有监测。全新安装无需创建 D1。
 
-无 git 环境的机器也可以用仓库自带的 API 推送脚本（走 `gh` 凭据）：
-`node scripts/push-root.mjs "提交说明"`。
+本机没有 Git 时用 `node scripts/push-root.mjs "说明"` 经 GitHub API 推送仓库根目录并触发部署。
 
-## 测试
+## 使用
 
-```bash
-npm test            # 31 个用例：状态转换/间隔调度/CAS 原子性/调度自愈/通知文案
-npx tsc --noEmit
+- 页面全部由 Worker 服务端渲染：首屏即真实状态，导航按登录态渲染，无加载闪烁；匿名页面边缘缓存 30 秒，管理员页面不缓存。
+- 管理页支持添加、编辑、删除站点；检查间隔 10/20/30/60 分钟，超时 3–60 秒。编辑保留同 ID 站点的全部历史，删除为两击确认。
+- 历史故障弹窗按站点与月份筛选；每日数据条可点开当日故障详情；详情页提供 90 天历史和 12 小时响应曲线。
+- 封面图可自定义，留空使用 image.thum.io 生成，浏览器会请求该第三方服务。
+- 标题、导航链接、维护计划（进行中显示横幅、未开始显示预告）和通知策略在 `src/config.ts` 修改；维护期间继续记录状态并抑制通知。
+- 故障记录保留 90 天，响应样本保留 12 小时，检查时顺带清理过期数据。
+
+## 接口
+
+| 地址 | 用途 |
+| --- | --- |
+| `/health` | 调度时间、最近运行时间、健康状态；过期返回 503 |
+| `/api/view?id=ID` | 页面数据，省略 ID 返回所有站点 |
+| `/api/data` | 兼容状态摘要 |
+| `/api/status?id=ID` | 故障与响应历史 |
+| `/api/badge?id=ID&label=名称` | Shields JSON 徽章 |
+| `/api/admin`、`/api/monitors` | 登录和站点管理 |
+
+可选设置 Worker Secret `MONITOR_TRIGGER_SECRET`，通过 `/trigger` 和 `Authorization: Bearer <secret>` 手动触发到期检查。不要把密钥写入仓库。
+
+## 开发与验证
+
+```sh
+npm run dev
+npm test
+npm run check
+npx wrangler deploy --dry-run
 ```
 
-## License
+测试内核使用 Node 自带 SQLite 和可控时钟、网络，验证状态转换、事务回滚、迁移、并发去重、请求预算及整日运行；`test/http.test.ts` 在 `TEST_URL` 指向隔离实例时验证真实运行时的页面、鉴权与增删改。它不向通知服务发送请求，也不代表 Cloudflare 实测 CPU。
 
-Apache-2.0（沿用上游 [UptimeFlare](https://github.com/lyc8503/UptimeFlare)）。
+免费额度以 Cloudflare 最新文档为准：Workers 每天 10 万动态请求，SQLite DO 每天 500 万行读取、10 万行写入；静态资源请求免费。单批最多 40 次探测、10 次通知，超额任务一秒后继续，单实例最多 100 个站点。100 个健康站点按十分钟间隔约需每天 14,400 次探测；访客动态请求与历史大小另计。
+
+`notify.ts` 的通知区域集中了推送渠道；通知在状态提交后发送，失败写入 Worker 日志，不自动重试。它适合个人站点提醒，不承诺可靠消息投递。单点检查也不能代表全球各地访问情况。
+
+Apache-2.0，见 LICENSE。

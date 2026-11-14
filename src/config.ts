@@ -1,17 +1,21 @@
-import type { MaintenanceConfig, PageConfig, WorkerConfig } from './types'
+import type { Settings } from './types'
 
-const pageConfig: PageConfig = {
+export const settings: Settings = {
   title: '服务状态',
   links: [],
-  favicon: '/favicon.svg',
-}
-
-const workerConfig: WorkerConfig = {
+  maintenances: [],
   notification: {
     timeZone: 'Asia/Shanghai',
+    gracePeriod: 0,
+    skipNotificationIds: [],
+    skipErrorChangeNotification: false,
   },
 }
 
-const maintenances: MaintenanceConfig[] = []
-
-export { maintenances, pageConfig, workerConfig }
+export const push = {
+  url: 'https://timelynotify.oicode.cn/Nt5RQRHQ5Vg5fNHdJF54Z9',
+  icon: 'https://static.wallleap.cn/temp/nwvgnm7l2on5u6c531mo.jpg',
+  group: '服务状态',
+  ttl: '600',
+  sound: 'multiwayinvitation',
+}

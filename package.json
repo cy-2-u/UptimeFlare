@@ -1,18 +1,17 @@
 {
   "name": "uptimeflare",
-  "version": "4.0.0",
+  "version": "5.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "wrangler dev --test-scheduled",
-    "test": "tsx --test test/**/*.test.ts",
-    "deploy": "wrangler deploy --config wrangler.deploy.toml"
-  },
-  "dependencies": {
-    "hono": "^4.9.0"
+    "test": "tsx --test test/*.test.ts",
+    "check": "tsc --noEmit",
+    "deploy": "node scripts/deploy.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261023.1",
-    "@types/node": "^20.0.0",
+    "@types/node": "^24.0.0",
     "tsx": "^4.21.0",
     "typescript": "^5.0.4",
     "wrangler": "^4.54.0"

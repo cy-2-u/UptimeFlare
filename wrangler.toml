@@ -1,31 +1,21 @@
 name = "uptimeflare_worker"
-main = "src/index.tsx"
-compatibility_date = "2025-04-02"
-compatibility_flags = [ "nodejs_compat" ]
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
 
-# Static assets are served before the Worker runs and do not count against
-# the free plan request quota. Unmatched paths fall through to the Worker.
 [assets]
 directory = "./assets"
+not_found_handling = "404-page"
+# Pages are server-rendered by the Worker; static files (css/js/favicon/404) stay asset-served.
+run_worker_first = ["/", "/manage", "/login", "/m/*", "/api/*", "/health", "/trigger"]
 
 [triggers]
-# Cron is only a supervisor: it re-arms the Durable Object alarm when it went
-# missing and force-re-arms when rounds went stale. The real cadence lives in
-# the MonitorScheduler alarm.
-crons = [ "0 * * * *" ]
-
-[[d1_databases]]
-binding = "UPTIMEFLARE_D1"
-database_name = "uptimeflare_d1"
-database_id = "00000000-0000-0000-0000-000000000000"
+crons = ["0 * * * *"]
 
 [[durable_objects.bindings]]
 name = "MONITOR_SCHEDULER_DO"
 class_name = "MonitorScheduler"
 
-# Migration ledger must stay identical to what production already applied
-# (v1 RemoteChecker, v2 MonitorScheduler, v3 RemoteChecker removal) so the
-# Durable Object namespace — and its stored monitor list — carries over.
+# Keep the applied ledger and object identity: the stored monitor list is imported in place.
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["RemoteChecker"]

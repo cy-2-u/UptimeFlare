@@ -1,16 +1,7 @@
-# dependencies
 node_modules/
-
-# build artifacts
+.wrangler/
 dist/
 wrangler.deploy.toml
-
-# wrangler local state
-.wrangler/
-
-# misc
-.DS_Store
-*.log
-
-# local dev secrets
 .dev.vars
+*.log
+.DS_Store

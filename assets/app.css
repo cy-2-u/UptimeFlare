@@ -745,3 +745,7 @@ dialog.dlg::backdrop { background: rgba(15, 23, 42, 0.3); backdrop-filter: blur(
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
+
+/* Upcoming maintenance shares the alert styling with a neutral tone. */
+.maint.upcoming { background: #f8fafc; border-left-color: #9ca3af; }
+.maint.upcoming .maint-title { color: var(--ink-soft); }
