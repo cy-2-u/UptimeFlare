@@ -22,6 +22,13 @@ export class Engine {
     await this.storage.setAlarm(next)
     return next
   }
+  // A fresh monitor would otherwise sit unchecked until the next anchored
+  // tick — up to ten minutes of "等待检查". Pull the alarm in instead.
+  private async ensureAlarmSoon() {
+    const soon = this.runtime.now() + 2000
+    const existing = await this.storage.getAlarm()
+    if (existing === null || existing > soon) await this.storage.setAlarm(soon)
+  }
   async health() {
     const nextAlarm = await this.ensureAlarm()
     const lastUpdate = (await this.storage.get<number>('lastUpdate')) ?? 0
@@ -149,7 +156,7 @@ export class Engine {
       const next = previous ? monitors.map(m => m.id === monitor.id ? monitor : m) : [...monitors, monitor]
       if (next.length > 100) throw new HttpError('单实例最多 100 个站点')
       await this.storage.put({ monitors: next })
-      await this.ensureAlarm()
+      await this.ensureAlarmSoon()
       return { data: { monitor, monitors: next } }
     })
   }

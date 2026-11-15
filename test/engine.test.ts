@@ -26,6 +26,8 @@ test('complete user journey: setup, add, check, failure, change, recovery, edit,
   const { storage, network, engine, state } = fixture(t)
   const cookie = await login(engine)
   await engine.request('POST', '/api/monitors', monitor, cookie, true)
+  // A new monitor must not wait for the anchored tick: the alarm is pulled in.
+  assert.ok((await storage.getAlarm())! <= network.now() + 2000)
   await engine.run('TEST')
   assert.equal((await state())!.up, true)
   assert.equal(network.notices.length, 0)

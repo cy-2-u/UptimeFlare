@@ -65,10 +65,8 @@ async function page(request: Request, env: Env, ctx: ExecutionContext, path: str
     try { return JSON.parse((await backend.request('GET', '/api/admin', {}, cookie, secure)).body) as AdminInfo }
     catch { return null }
   }
-  const admin = cookie ? await adminInfo() : null
-  const isAdmin = admin?.isAuthenticated === true
-
   if (path === '/manage') {
+    // The monitors call is itself the auth check — no separate admin probe.
     const result = await backend.request('GET', '/api/monitors', {}, cookie, secure)
     if (result.status !== 200) return redirect('/login')
     const monitors = (JSON.parse(result.body) as { monitors: Monitor[] }).monitors
@@ -76,14 +74,15 @@ async function page(request: Request, env: Env, ctx: ExecutionContext, path: str
     return html(layout({ title: '站点管理', site: settings.title, isAdmin: true, manage: true, boot, links: settings.links }, managePage(monitors)), 'private, no-store')
   }
   if (path === '/login') {
-    if (isAdmin) return redirect('/manage')
-    const info = admin ?? await adminInfo()
-    const hasAdmin = info?.hasAdmin === true
+    const admin = cookie ? await adminInfo() : null
+    if (admin?.isAuthenticated === true) return redirect('/manage')
+    const hasAdmin = admin?.hasAdmin === true
     return html(layout({ title: hasAdmin ? '管理员登录' : '设置管理员', site: settings.title, isAdmin: false, login: true, links: settings.links }, loginPage(hasAdmin)), 'private, no-store')
   }
 
   // / and /m/:id — anonymous visitors share one edge-cached render; a valid
   // admin session gets fresh HTML with the admin nav (never cached).
+  const isAdmin = cookie ? (await adminInfo())?.isAuthenticated === true : false
   const id = path.startsWith('/m/') ? path.slice(3) : undefined
   if (id === '') return redirect('/')
   const key = url.origin + path
