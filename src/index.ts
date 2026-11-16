@@ -72,7 +72,9 @@ async function page(request: Request, env: Env, ctx: ExecutionContext, path: str
     return html(layout({ title: '站点管理', site: settings.title, isAdmin: true, manage: true, boot, links: settings.links }, managePage(monitors)), 'private, no-store')
   }
   if (path === '/login') {
-    const admin = cookie ? await adminInfo() : null
+    // hasAdmin is cookie-independent: the very visitor who needs this page
+    // has no session yet. Only the redirect check cares about the cookie.
+    const admin = await adminInfo()
     if (admin?.isAuthenticated === true) return redirect('/manage')
     const hasAdmin = admin?.hasAdmin === true
     return html(layout({ title: hasAdmin ? '管理员登录' : '设置管理员', site: settings.title, isAdmin: false, login: true, links: settings.links }, loginPage(hasAdmin)), 'private, no-store')

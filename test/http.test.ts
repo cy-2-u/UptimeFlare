@@ -31,6 +31,9 @@ integration('real Workers runtime: static delivery, page auth, RPC errors, authe
   assert.equal(manage.status, 200)
   assert.ok((await manage.text()).includes('data-action="logout"'))
   assert.equal((await fetch(base + '/login', { redirect: 'manual', headers: { cookie: cookie! } })).status, 302)
+  // An admin exists and this anonymous visit carries no cookie — the page must
+  // offer login, not first-time setup (the hasAdmin lookup is cookie-independent).
+  assert.ok((await (await fetch(base + '/login')).text()).includes('管理员登录'))
   const added = await call('/api/monitors', 'POST', { id: 'runtime-check', name: '运行时验证', target: 'https://example.com' }, cookie!)
   assert.equal(added.response.status, 200)
   assert.equal((await call('/api/monitors', 'PUT', { id: 'runtime-check', name: '已编辑', timeout: 4500 }, cookie!)).response.status, 200)
