@@ -1,6 +1,7 @@
 import type { Credentials } from './types'
 
 const encoder = new TextEncoder()
+const SESSION_TTL = 2592000 // 30 days, shared by the token payload and the cookie
 export const hex = (bytes: Uint8Array) => Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('')
 const unhex = (value: string) => Uint8Array.from(value.match(/../g) ?? [], v => parseInt(v, 16))
 export const random = () => hex(crypto.getRandomValues(new Uint8Array(24)))
@@ -21,7 +22,7 @@ export async function sign(secret: string, message: string) {
   return hex(new Uint8Array(await crypto.subtle.sign('HMAC', key, encoder.encode(message))))
 }
 export async function token(credentials: Credentials, now: number) {
-  const payload = `${Math.floor(now / 1000) + 2592000}.${random()}`
+  const payload = `${Math.floor(now / 1000) + SESSION_TTL}.${random()}`
   return `${payload}.${await sign(credentials.sessionKey, payload)}`
 }
 export async function authenticated(credentials: Credentials | undefined, cookie: string, now: number) {
@@ -33,5 +34,5 @@ export async function authenticated(credentials: Credentials | undefined, cookie
   return crypto.subtle.verify('HMAC', key, unhex(parts[2]), encoder.encode(`${parts[0]}.${parts[1]}`))
 }
 export function sessionCookie(value: string, secure: boolean) {
-  return `status_admin_session=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${value ? 2592000 : 0}${secure ? '; Secure' : ''}`
+  return `status_admin_session=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${value ? SESSION_TTL : 0}${secure ? '; Secure' : ''}`
 }

@@ -160,7 +160,7 @@ export async function handle(request: Request, env: Env, ctx: ExecutionContext):
     const cache = caches.default
     const cached = await cache.match(key.href)
     if (cached) return cached
-    const result = await backend.snapshot(path === '/api/status' ? id ?? '' : id)
+    const result = await backend.snapshot(id)
     if (result.error) throw new HttpError(result.error.message, result.error.status)
     const snapshot = result.data!
     let data: unknown = snapshot

@@ -1,5 +1,5 @@
 /* ================================================================
-   UptimeFlare v3.1 — design system (no CSS framework)
+   UptimeFlare — design system (no CSS framework)
    Palette: slate neutrals; status colors as tokens.
    ================================================================ */
 
@@ -126,7 +126,6 @@ main { max-width: 80rem; margin: 0 auto; padding: 0 1rem 4rem; }
   justify-content: space-between;
 }
 .footer-links { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; }
-.custom-footer { font-size: 12px; opacity: 0.7; }
 
 /* ---- buttons ------------------------------------------------------------- */
 

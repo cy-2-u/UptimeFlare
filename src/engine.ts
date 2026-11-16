@@ -53,7 +53,7 @@ export class Engine {
       try {
         const monitors = await this.monitors()
         const states = new Map(await Promise.all(monitors.map(async m => [m.id, await this.state(m.id)] as const)))
-        const due = monitors.filter(m => this.forceNext.delete(m.id) || !states.get(m.id)!.checkedAt || started / 1000 - states.get(m.id)!.checkedAt >= (m.intervalMinutes ?? 10) * 60 - 30)
+        const due = monitors.filter(m => this.forceNext.delete(m.id) || !states.get(m.id)!.checkedAt || started / 1000 - states.get(m.id)!.checkedAt >= m.intervalMinutes * 60 - 30)
         const changes: Record<string, unknown> = {}
         const notices: Notice[] = []
         let requests = 0

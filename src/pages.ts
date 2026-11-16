@@ -79,13 +79,13 @@ export function statusPage(boot: StatusBoot) {
 
   const groups = new Map<string, Monitor[]>()
   for (const monitor of boot.monitors) {
-    const name = monitor.group || '核心服务'
+    const name = monitor.group
     if (!groups.has(name)) groups.set(name, [])
     groups.get(name)!.push(monitor)
   }
 
   const cards = [...groups.entries()].map(([name, monitors]) => `<section class="group"><div class="group-head"><div class="group-mark">${groupIcon(name)}</div><h2>${esc(name)}</h2></div><div class="cards">${monitors.map(monitor => {
-    const status = boot.up[monitor.id] === undefined || boot.up[monitor.id] === null ? 'pending' : boot.up[monitor.id] ? 'up' : 'down'
+    const status = boot.up[monitor.id] == null ? 'pending' : boot.up[monitor.id] ? 'up' : 'down'
     const preview = monitor.preview || (monitor.target.startsWith('https://') ? `https://image.thum.io/get/width/1200/${monitor.target}` : '')
     const shot = preview
       ? `<a href="${esc(monitor.statusPageLink || monitor.target)}" target="_blank" rel="noopener noreferrer"><img src="${esc(preview)}" alt="${esc(monitor.name)}" loading="lazy"></a>`
@@ -93,7 +93,7 @@ export function statusPage(boot: StatusBoot) {
     const ping = boot.lastPing[monitor.id]
     return `<article class="card" data-monitor="${esc(monitor.id)}">
 <div class="card-preview"><div class="card-chrome"><span></span><span></span><span></span><span class="chrome-host">${esc(hostnameOf(monitor.target))}</span></div><div class="card-shot">${shot}</div></div>
-<div class="card-head"><div class="min-w-0"><h3>${esc(monitor.name)}</h3><div class="host">${esc(hostnameOf(monitor.target))}</div></div><span class="badge">${esc(monitor.group || '核心服务')}</span></div>
+<div class="card-head"><div class="min-w-0"><h3>${esc(monitor.name)}</h3><div class="host">${esc(hostnameOf(monitor.target))}</div></div><span class="badge">${esc(monitor.group)}</span></div>
 <div class="card-bars"><div class="bars-meta"><span>近 30 天</span><span class="mono" data-percent>—</span></div><div class="bars" data-bars></div></div>
 <div class="card-foot"><span class="dot dot-${status}" data-dot></span><span data-status-label>${STATUS_LABEL[status]}</span><span class="muted" data-ago></span><span class="latency" data-latency>${ping ? `${ping}ms` : '—'}</span></div>
 </article>`
@@ -147,7 +147,7 @@ export function detailPage(boot: DetailBoot | null, id: string) {
 export function managePage(monitors: Monitor[]) {
   const rows = monitors.length === 0
     ? `<p class="empty-state">当前还没有网站。</p>`
-    : monitors.map(monitor => `<div class="monitor-row" data-row="${esc(monitor.id)}"><div class="min-w-0"><div class="row-title"><strong>${esc(monitor.name)}</strong><span class="badge">${esc(monitor.group || '核心服务')}</span><span class="badge">${monitor.intervalMinutes ?? 10} 分钟</span></div><div class="row-target">${esc(monitor.target)}</div></div><div class="row-actions"><button type="button" class="btn ghost sm" data-edit="${esc(monitor.id)}">编辑</button><button type="button" class="btn danger sm" data-remove="${esc(monitor.id)}">删除</button></div></div>`).join('')
+    : monitors.map(monitor => `<div class="monitor-row" data-row="${esc(monitor.id)}"><div class="min-w-0"><div class="row-title"><strong>${esc(monitor.name)}</strong><span class="badge">${esc(monitor.group)}</span><span class="badge">${monitor.intervalMinutes} 分钟</span></div><div class="row-target">${esc(monitor.target)}</div></div><div class="row-actions"><button type="button" class="btn ghost sm" data-edit="${esc(monitor.id)}">编辑</button><button type="button" class="btn danger sm" data-remove="${esc(monitor.id)}">删除</button></div></div>`).join('')
   const dropdown = (name: string, label: string) => `<div class="relative" data-${name}-box><button type="button" class="dropdown" data-dropdown="${name}" aria-haspopup="listbox" aria-expanded="false"><span data-dropdown-label>${label}</span>${CHEV}</button><ul class="menu" data-menu="${name}" hidden></ul></div>`
   return `<div class="manage-wrap"><a href="/" class="back">← 返回状态页</a>
 <section class="manage-card">

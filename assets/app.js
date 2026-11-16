@@ -196,7 +196,7 @@ function renderHistory(bootstrap) {
 
   const found = []
   bootstrap.monitors.forEach(monitor => {
-    const incidents = bootstrap.incident[monitor.id] || []
+    const incidents = bootstrap.incident[monitor.id]
     incidents.forEach(incident => {
       const incidentStart = incident.start[0]
       const incidentEnd = incident.end == null ? nowSec : incident.end
@@ -326,8 +326,8 @@ function initStatusPage(bootstrap) {
   bootstrap.monitors.forEach(monitor => {
     const card = $('[data-monitor="' + monitor.id + '"]')
     if (!card) return
-    const incidents = bootstrap.incident[monitor.id] || []
-    const totals = renderBars($('[data-bars]', card), incidents, (bootstrap.startedAt || {})[monitor.id], Math.floor(Date.now() / 1000), 30, monitor.name)
+    const incidents = bootstrap.incident[monitor.id]
+    const totals = renderBars($('[data-bars]', card), incidents, bootstrap.startedAt[monitor.id], Math.floor(Date.now() / 1000), 30, monitor.name)
     const percent = $('[data-percent]', card)
     if (percent) {
       const value = totals.totalMonitorTime > 0 ? (((totals.totalMonitorTime - totals.totalDownTime) / totals.totalMonitorTime) * 100).toFixed(2) : '—'
@@ -417,11 +417,11 @@ function initStatusPage(bootstrap) {
 
 function initDetailPage(bootstrap) {
   const monitor = bootstrap.monitor
-  const incidents = bootstrap.incident || []
-  const latencies = bootstrap.latency || []
+  const incidents = bootstrap.incident
+  const latencies = bootstrap.latency
   const nowSec = Math.floor(Date.now() / 1000)
 
-  const inMaintenance = (bootstrap.maintenances || []).some(m => {
+  const inMaintenance = bootstrap.maintenances.some(m => {
     const t = Date.now()
     return t >= new Date(m.start).getTime() && (!m.end || t <= new Date(m.end).getTime()) && (m.monitors || []).indexOf(monitor.id) !== -1
   })
@@ -603,7 +603,7 @@ function initManagePage(bootstrap) {
   let loading = false
   let editingId = ''
 
-  const groups = Array.from(new Set(['核心服务'].concat(bootstrap.monitors.map(monitor => monitor.group || '核心服务'))))
+  const groups = Array.from(new Set(['核心服务'].concat(bootstrap.monitors.map(monitor => monitor.group))))
 
   const intervalDropdown = setupDropdown($('[data-interval-box]'), bootstrap.intervalOptions.map(minutes => ({ value: String(minutes), label: minutes + ' 分钟' })), () => {})
   const timeoutDropdown = setupDropdown($('[data-timeout-box]'), bootstrap.timeoutOptions.map(seconds => ({ value: String(seconds), label: seconds + ' 秒' })), () => {})
@@ -685,11 +685,11 @@ function initManagePage(bootstrap) {
       setEditing(monitor.id)
       form.elements.name.value = monitor.name
       form.elements.target.value = monitor.target
-      form.elements.group.value = monitor.group || '核心服务'
+      form.elements.group.value = monitor.group
       form.elements.preview.value = monitor.preview || ''
       form.elements.statusPageLink.value = monitor.statusPageLink && monitor.statusPageLink !== monitor.target ? monitor.statusPageLink : ''
-      intervalDropdown.value = monitor.intervalMinutes || 10
-      timeoutDropdown.value = String(Math.round((monitor.timeout || 3000) / 1000))
+      intervalDropdown.value = monitor.intervalMinutes
+      timeoutDropdown.value = String(Math.round(monitor.timeout / 1000))
       setMessage('正在编辑「' + monitor.name + '」，修改不会影响历史数据。')
       form.scrollIntoView({ behavior: 'smooth', block: 'start' })
     })
