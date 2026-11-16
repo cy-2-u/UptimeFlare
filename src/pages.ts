@@ -84,7 +84,7 @@ export function statusPage(boot: StatusBoot) {
     groups.get(name)!.push(monitor)
   }
 
-  const cards = [...groups.entries()].map(([name, monitors]) => `<section class="group"><div class="group-head"><div class="group-mark">${groupIcon(name)}</div><h2>${esc(name)}</h2></div><div class="cards">${monitors.map(monitor => {
+  const cards = [...groups.entries()].map(([name, monitors]) => `<section><div class="group-head"><div class="group-mark">${groupIcon(name)}</div><h2>${esc(name)}</h2></div><div class="cards">${monitors.map(monitor => {
     const status = boot.up[monitor.id] == null ? 'pending' : boot.up[monitor.id] ? 'up' : 'down'
     const preview = monitor.preview || (monitor.target.startsWith('https://') ? `https://image.thum.io/get/width/1200/${monitor.target}` : '')
     const shot = preview
@@ -94,13 +94,13 @@ export function statusPage(boot: StatusBoot) {
     return `<article class="card" data-monitor="${esc(monitor.id)}">
 <div class="card-preview"><div class="card-chrome"><span></span><span></span><span></span><span class="chrome-host">${esc(hostnameOf(monitor.target))}</span></div><div class="card-shot">${shot}</div></div>
 <div class="card-head"><div class="min-w-0"><h3>${esc(monitor.name)}</h3><div class="host">${esc(hostnameOf(monitor.target))}</div></div><span class="badge">${esc(monitor.group)}</span></div>
-<div class="card-bars"><div class="bars-meta"><span>近 30 天</span><span class="mono" data-percent>—</span></div><div class="bars" data-bars></div></div>
+<div><div class="bars-meta"><span>近 30 天</span><span class="mono" data-percent>—</span></div><div class="bars" data-bars></div></div>
 <div class="card-foot"><span class="dot dot-${status}" data-dot></span><span data-status-label>${STATUS_LABEL[status]}</span><span class="muted" data-ago></span><span class="latency" data-latency>${ping ? `${ping}ms` : '—'}</span></div>
 </article>`
   }).join('')}</div></section>`).join('')
 
   return `<section class="hero">
-<div class="hero-left hero-enter">
+<div class="hero-enter">
 <div class="pulse-chip"><span class="pulse-dot${overall.tone ? ' ' + overall.tone : ''}" data-overall-dot></span><span>持续监测中</span></div>
 <h1 class="hero-title">${esc(boot.title)}</h1>
 <div class="overall${overall.tone ? ' ' + overall.tone : ''}"><span data-overall-icon>${overall.icon}</span><span data-overall-text>${overall.label}</span></div>
@@ -128,7 +128,7 @@ export function statusPage(boot: StatusBoot) {
 export type DetailBoot = { monitor: Monitor; up: boolean | null; incident: Incident[]; latency: { time: number; ping: number; loc: string }[]; startedAt?: number; lastUpdate: number; maintenances: Maintenance[] }
 
 export function detailPage(boot: DetailBoot | null, id: string) {
-  if (!boot) return `<div class="detail-wrap"><a href="/" class="back">← 返回状态页</a><p class="empty">未找到监测项：${esc(id)}</p></div>`
+  if (!boot) return `<div class="detail-wrap"><a href="/" class="back">← 返回状态页</a><p class="empty-state">未找到监测项：${esc(id)}</p></div>`
   const hasData = boot.incident.length > 0 || boot.latency.length > 0
   if (!hasData) return `<div class="detail-wrap"><a href="/" class="back">← 返回状态页</a><article class="detail-card"><h2 class="detail-name">${esc(boot.monitor.name)}</h2><p class="muted">暂无监测数据。</p></article></div>`
   const isUp = boot.up !== false

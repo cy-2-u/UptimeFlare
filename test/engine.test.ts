@@ -4,7 +4,7 @@ import { Engine } from '../src/engine'
 import { settings } from '../src/config'
 import { freshState, stateKey, type Monitor, type State } from '../src/types'
 import { Kernel, Network } from './kernel'
-import { authenticated } from '../src/auth'
+import { authenticated, passwordHash } from '../src/auth'
 import { importLegacy } from '../src/legacy'
 import { parseMonitor } from '../src/monitor'
 
@@ -240,6 +240,18 @@ test('legacy migration preserves credentials, incidents and latency without chan
   assert.equal(imported.latency![0].loc, 'SEA')
   assert.equal(imported.incidents[0].end, null)
   assert.equal((await storage.get<any>('admin')).username, 'old')
+})
+
+test('imported legacy credentials still log in through the sha-256 fallback path', async t => {
+  const { storage, engine } = fixture(t)
+  const salt = 'oldsalt'
+  const hash = await passwordHash('legacy-password', salt) // no algorithm → SHA-256, the v4 credential shape
+  const rows = [{ key: 'admin_credentials', value: JSON.stringify({ username: 'old', salt, passwordHash: hash }) }]
+  const db = { prepare: () => ({ all: async () => ({ results: rows }) }) } as unknown as D1Database
+  await importLegacy(storage, db)
+  const login = await engine.request('POST', '/api/admin', { action: 'login', username: 'old', password: 'legacy-password' }, '', true)
+  const check = await engine.request('GET', '/api/admin', {}, login.cookie!, true)
+  assert.equal((check.data as { isAuthenticated: boolean }).isAuthenticated, true)
 })
 
 test('invalid legacy row aborts the migration atomically and can be retried', async t => {
