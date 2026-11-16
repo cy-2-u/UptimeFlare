@@ -66,6 +66,18 @@ test('one transient failure is confirmed, then recovery produces no outage', asy
   assert.equal((await state())!.incidents.length, 0)
 })
 
+test('editing a target forces an immediate recheck despite the interval gate', async t => {
+  const { storage, network, engine, state } = fixture(t)
+  const cookie = await login(engine)
+  await engine.request('POST', '/api/monitors', monitor, cookie, true)
+  await engine.run()
+  network.advance(60) // one minute since the check — far below the 570s gate
+  await engine.request('PUT', '/api/monitors', { id: monitor.id, target: 'https://moved.example.com' }, cookie, true)
+  await engine.run()
+  assert.equal(network.checks.filter(url => url.includes('moved.example.com')).length, 1)
+  assert.equal((await state())!.up, true)
+})
+
 test('failed atomic commit stores nothing and sends nothing; next run recovers', async t => {
   const { storage, network, engine, state } = fixture(t)
   await storage.put({ monitors: [monitor] })

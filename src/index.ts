@@ -3,7 +3,7 @@ import { Engine } from './engine'
 import { settings } from './config'
 import { importLegacy } from './legacy'
 import { detailPage, INTERVAL_OPTIONS, layout, loginPage, managePage, statusPage, TIMEOUT_OPTIONS, type DetailBoot, type StatusBoot } from './pages'
-import { HttpError, type Incident, type Monitor, type Point, type Storage } from './types'
+import { HttpError, type Monitor, type Storage } from './types'
 
 type Env = {
   MONITOR_SCHEDULER_DO: DurableObjectNamespace<MonitorScheduler>
@@ -52,8 +52,6 @@ const stub = (env: Env) => env.MONITOR_SCHEDULER_DO.get(env.MONITOR_SCHEDULER_DO
 const toTarget = (m: Monitor) => ({ id: m.id, name: m.name, target: m.target, group: m.group, timeout: m.timeout, intervalMinutes: m.intervalMinutes, ...(m.preview ? { preview: m.preview } : {}), ...(m.statusPageLink ? { statusPageLink: m.statusPageLink } : {}), ...(m.tooltip ? { tooltip: m.tooltip } : {}) })
 
 type AdminInfo = { hasAdmin: boolean; isAuthenticated: boolean }
-type SnapshotItem = Monitor & { startedAt: number; checkedAt: number; up: boolean | null; error: string; notified: boolean; incidents: Incident[]; latency?: Point[]; ping: number | null; location: string | null }
-type Snapshot = { title: string; updatedAt: number; up: number; down: number; monitors: SnapshotItem[] }
 
 async function page(request: Request, env: Env, ctx: ExecutionContext, path: string): Promise<Response> {
   if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405)
@@ -105,6 +103,9 @@ async function page(request: Request, env: Env, ctx: ExecutionContext, path: str
   const boot: StatusBoot = {
     title: settings.title,
     lastUpdate: snap.updatedAt,
+    // Stale = rounds stopped while monitors exist (the cron supervisor would
+    // normally prevent this; the banner is the honest last line of defense).
+    stale: snap.monitors.length > 0 && snap.updatedAt > 0 && Math.floor(Date.now() / 1000) - snap.updatedAt > 1500,
     overallUp: snap.up,
     overallDown: snap.down,
     monitors: snap.monitors.map(toTarget),

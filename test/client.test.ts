@@ -3,6 +3,17 @@ import assert from 'node:assert/strict'
 // Browser math is tested directly, without maintaining a second implementation.
 // @ts-expect-error the client module intentionally has no build or declaration step
 import { barClass, dayStats } from '../assets/stats.js'
+import { overallState } from '../src/pages'
+
+test('overall banner: staleness outranks every other tone', () => {
+  assert.deepEqual(overallState(3, 0, true), { tone: 'stale', icon: '⏳', label: '监测数据已过期' })
+  assert.deepEqual(overallState(0, 3, true), { tone: 'stale', icon: '⏳', label: '监测数据已过期' })
+  assert.equal(overallState(0, 0, true).tone, '') // no data yet — nothing can be stale
+  assert.deepEqual(overallState(0, 0, false), { tone: '', icon: '⏳', label: '暂无监测数据' })
+  assert.deepEqual(overallState(0, 2, false), { tone: 'bad', icon: '✖', label: '全部服务不可用' })
+  assert.deepEqual(overallState(2, 0, false), { tone: 'ok', icon: '✔', label: '全部服务运行正常' })
+  assert.deepEqual(overallState(2, 1, false), { tone: 'warn', icon: '⚠', label: '1 / 3 个服务出现故障' })
+})
 
 test('uptime bars distinguish pending from perfect uptime and clip incidents to observed time', () => {
   const now = new Date(2026, 10, 13, 12).getTime() / 1000

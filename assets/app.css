@@ -220,6 +220,7 @@ main { max-width: 80rem; margin: 0 auto; padding: 0 1rem 4rem; }
 }
 .pulse-dot.warn { background: var(--warn); }
 .pulse-dot.bad { background: var(--bad); }
+.pulse-dot.stale { background: var(--warn); }
 .pulse-dot::after {
   content: '';
   position: absolute;
@@ -244,6 +245,7 @@ main { max-width: 80rem; margin: 0 auto; padding: 0 1rem 4rem; }
 .overall.ok { color: var(--ok-deep); }
 .overall.warn { color: var(--warn-deep); }
 .overall.bad { color: var(--bad-deep); }
+.overall.stale { color: var(--warn-deep); }
 
 .hero-actions { margin-top: 2.25rem; display: flex; flex-wrap: wrap; gap: 0.75rem; }
 .hero-enter { animation: arrive 0.7s ease-out both; }

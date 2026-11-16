@@ -14,6 +14,16 @@ const BRAND = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" strok
 const STATUS_LABEL: Record<string, string> = { up: '运行正常', down: '宕机', pending: '等待检查' }
 const groupIcon = (group: string) => group.includes('基础') ? '🖥' : group.includes('AI') ? '☁' : group.includes('工具') ? '🧰' : '🗔'
 
+// Staleness outranks everything: an "all good" banner built from expired
+// data is a lie. Exported so tests cover the exact tone matrix.
+export function overallState(up: number, down: number, stale: boolean) {
+  if (stale && up + down > 0) return { tone: 'stale', icon: '⏳', label: '监测数据已过期' }
+  if (up + down === 0) return { tone: '', icon: '⏳', label: '暂无监测数据' }
+  if (up === 0) return { tone: 'bad', icon: '✖', label: '全部服务不可用' }
+  if (down === 0) return { tone: 'ok', icon: '✔', label: '全部服务运行正常' }
+  return { tone: 'warn', icon: '⚠', label: `${down} / ${up + down} 个服务出现故障` }
+}
+
 // Page shell. `title` is the per-page document title; `site` is the brand name
 // shown in the topbar and footer. The nav is rendered from the validated
 // session — no client swap, no flash, no extra fetch. On the manage page
@@ -52,6 +62,7 @@ ${opts.boot === undefined ? '' : bootScript(opts.boot)}
 export type StatusBoot = {
   title: string
   lastUpdate: number
+  stale: boolean
   overallUp: number
   overallDown: number
   monitors: Monitor[]
@@ -64,13 +75,7 @@ export type StatusBoot = {
 
 export function statusPage(boot: StatusBoot) {
   const total = boot.overallUp + boot.overallDown
-  const overall = total === 0
-    ? { tone: '', icon: '⏳', label: '暂无监测数据' }
-    : boot.overallUp === 0
-      ? { tone: 'bad', icon: '✖', label: '全部服务不可用' }
-      : boot.overallDown === 0
-        ? { tone: 'ok', icon: '✔', label: '全部服务运行正常' }
-        : { tone: 'warn', icon: '⚠', label: `${boot.overallDown} / ${total} 个服务出现故障` }
+  const overall = overallState(boot.overallUp, boot.overallDown, boot.stale)
 
   const groups = new Map<string, Monitor[]>()
   for (const monitor of boot.monitors) {

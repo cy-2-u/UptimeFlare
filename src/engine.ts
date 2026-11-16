@@ -7,6 +7,9 @@ const TICK = 600000
 export class Engine {
   private tail: Promise<unknown> = Promise.resolve()
   private running?: Promise<void>
+  // Edited monitors skip the interval gate for one round: a changed target
+  // must not keep showing the old address's result for up to ten minutes.
+  private forceNext = new Set<string>()
   constructor(private storage: Storage, private runtime: Runtime, private config: Settings) {}
   private serial<T>(fn: () => Promise<T>): Promise<T> {
     const task = this.tail.then(fn)
@@ -50,7 +53,7 @@ export class Engine {
       try {
         const monitors = await this.monitors()
         const states = new Map(await Promise.all(monitors.map(async m => [m.id, await this.state(m.id)] as const)))
-        const due = monitors.filter(m => !states.get(m.id)!.checkedAt || started / 1000 - states.get(m.id)!.checkedAt >= (m.intervalMinutes ?? 10) * 60 - 30)
+        const due = monitors.filter(m => this.forceNext.delete(m.id) || !states.get(m.id)!.checkedAt || started / 1000 - states.get(m.id)!.checkedAt >= (m.intervalMinutes ?? 10) * 60 - 30)
         const changes: Record<string, unknown> = {}
         const notices: Notice[] = []
         let requests = 0
@@ -156,6 +159,7 @@ export class Engine {
       const next = previous ? monitors.map(m => m.id === monitor.id ? monitor : m) : [...monitors, monitor]
       if (next.length > 100) throw new HttpError('单实例最多 100 个站点')
       await this.storage.put({ monitors: next })
+      if (previous) this.forceNext.add(monitor.id)
       await this.ensureAlarmSoon()
       return { data: { monitor, monitors: next } }
     })

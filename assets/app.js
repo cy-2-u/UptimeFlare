@@ -273,10 +273,17 @@ function initStatusPage(bootstrap) {
   let lastUpdateSec = bootstrap.lastUpdate || 0
 
   function paintOverall() {
+    // Staleness outranks everything — an "all good" built from expired data
+    // is a lie. lastUpdateSec stays live via the /api/data poll.
+    const stale = lastUpdateSec > 0 && bootstrap.monitors.length > 0 && Date.now() / 1000 - lastUpdateSec > 1500
     let tone = 'ok'
     let label = '全部服务运行正常'
     let glyph = '✔'
-    if (overallUp === 0 && overallDown === 0) {
+    if (stale) {
+      tone = 'stale'
+      label = '监测数据已过期'
+      glyph = '⏳'
+    } else if (overallUp === 0 && overallDown === 0) {
       tone = ''
       label = '暂无监测数据'
       glyph = '⏳'
@@ -383,7 +390,19 @@ function initStatusPage(bootstrap) {
       data.monitors && Object.keys(data.monitors).forEach(id => {
         const card = $('[data-monitor="' + id + '"]')
         const summary = data.monitors[id]
-        if (!card || !summary || summary.latency == null) return
+        if (!card || !summary) return
+        // Keep each card's dot/label in step with the banner (maintenance
+        // overrides stay untouched — a maintenance window is not an outage).
+        const dot = $('[data-dot]', card)
+        if (dot && !dot.classList.contains('dot-maintenance')) {
+          const status = summary.up == null ? 'pending' : summary.up ? 'up' : 'down'
+          if (!dot.classList.contains('dot-' + status)) {
+            dot.className = 'dot dot-' + status
+            const statusLabel = $('[data-status-label]', card)
+            if (statusLabel) statusLabel.textContent = status === 'up' ? '运行正常' : status === 'down' ? '宕机' : '等待检查'
+          }
+        }
+        if (summary.latency == null) return
         const latency = $('[data-latency]', card)
         latency.textContent = summary.latency + 'ms'
         latency.style.color = summary.latency > 500 ? '#d97706' : '#334155'
