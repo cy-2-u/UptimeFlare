@@ -3,15 +3,12 @@ import type { Runtime, Storage } from '../src/types'
 
 export class Kernel implements Storage {
   readonly db = new DatabaseSync(':memory:')
-  reads = 0
   writes = 0
-  commits = 0
   failWrite = false
   alarm: number | null = null
   private depth = 0
   constructor() { this.db.exec('CREATE TABLE kv (key TEXT PRIMARY KEY, value TEXT NOT NULL)') }
   async get<T>(key: string): Promise<T | undefined> {
-    this.reads++
     const row = this.db.prepare('SELECT value FROM kv WHERE key=?').get(key) as { value: string } | undefined
     return row ? JSON.parse(row.value) : undefined
   }
@@ -26,7 +23,7 @@ export class Kernel implements Storage {
     if (this.depth) write()
     else {
       this.db.exec('BEGIN')
-      try { write(); this.db.exec('COMMIT'); this.commits++ }
+      try { write(); this.db.exec('COMMIT') }
       catch (error) { this.db.exec('ROLLBACK'); throw error }
     }
     this.writes += Object.keys(entries).length
@@ -40,7 +37,7 @@ export class Kernel implements Storage {
     if (this.depth) return fn(this)
     this.db.exec('BEGIN')
     this.depth++
-    try { const result = await fn(this); this.db.exec('COMMIT'); this.commits++; return result }
+    try { const result = await fn(this); this.db.exec('COMMIT'); return result }
     catch (error) { this.db.exec('ROLLBACK'); throw error }
     finally { this.depth-- }
   }

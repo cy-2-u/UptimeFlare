@@ -1,5 +1,5 @@
 // Uptime math shared with the client test suite (Node runs this file directly).
-export function overlapLen(x1, x2, y1, y2) {
+function overlapLen(x1, x2, y1, y2) {
   return Math.max(0, Math.min(x2, y2) - Math.max(x1, y1))
 }
 export function barClass(percent) {
