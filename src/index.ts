@@ -98,7 +98,7 @@ async function page(request: Request, env: Env, ctx: ExecutionContext, path: str
   const snap = result.data!
   if (id) {
     const item = snap.monitors[0]
-    const boot: DetailBoot = { monitor: toTarget(item), up: item.up, incident: item.incidents, latency: item.latency ?? [], ...(item.startedAt > 0 ? { startedAt: item.startedAt } : {}), checkedAt: item.checkedAt, lastUpdate: snap.updatedAt, maintenances: settings.maintenances }
+    const boot: DetailBoot = { monitor: toTarget(item), up: item.up, incident: item.incidents, latency: item.latency ?? [], ...(item.startedAt > 0 ? { startedAt: item.startedAt } : {}), checkedAt: item.checkedAt, maintenances: settings.maintenances }
     const body = layout({ title: `${item.name} - ${settings.title}`, site: settings.title, isAdmin, boot, links: settings.links }, detailPage(boot, id))
     return finish(body, key, isAdmin, ctx)
   }

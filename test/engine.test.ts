@@ -263,6 +263,16 @@ test('invalid legacy row aborts the migration atomically and can be retried', as
   assert.deepEqual(await storage.get('monitors'), [monitor])
 })
 
+test('pending deletes from the old version do not resurrect during migration', async t => {
+  const { storage, engine } = fixture(t)
+  await storage.put({ monitors: [monitor], pendingDeletes: [monitor.id] })
+  const rows = [{ key: 'state:inc:' + monitor.id, value: JSON.stringify({ start: [[1700000000]], end: [null], error: [['HTTP 503']] }) }]
+  const db = { prepare: () => ({ all: async () => ({ results: rows }) }) } as unknown as D1Database
+  await importLegacy(storage, db)
+  assert.equal(await storage.get('pendingDeletes'), undefined)
+  assert.deepEqual(await engine.snapshot(), { title: settings.title, links: settings.links, maintenances: [], updatedAt: 0, nextAlarm: null, up: 0, down: 0, monitors: [] })
+})
+
 test('existing monitors cannot silently migrate without the old database', async t => {
   const { storage } = fixture(t)
   await storage.put({ monitors: [monitor] })

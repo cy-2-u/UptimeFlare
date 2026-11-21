@@ -126,7 +126,7 @@ export function statusPage(boot: StatusBoot) {
 </dialog>`
 }
 
-export type DetailBoot = { monitor: Monitor; up: boolean | null; incident: Incident[]; latency: { time: number; ping: number; loc: string }[]; startedAt?: number; checkedAt: number; lastUpdate: number; maintenances: Maintenance[] }
+export type DetailBoot = { monitor: Monitor; up: boolean | null; incident: Incident[]; latency: { time: number; ping: number; loc: string }[]; startedAt?: number; checkedAt: number; maintenances: Maintenance[] }
 
 export function detailPage(boot: DetailBoot | null, id: string) {
   if (!boot) return `<div class="detail-wrap"><a href="/" class="back">← 返回状态页</a><p class="empty-state">未找到监测项：${esc(id)}</p></div>`
