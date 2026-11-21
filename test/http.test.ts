@@ -46,6 +46,8 @@ integration('real Workers runtime: static delivery, page auth, RPC errors, authe
   const summary = await call('/api/data?integration=1')
   assert.ok('up' in summary.data)
   assert.ok(!Array.isArray(summary.data.monitors))
+  // Per-monitor check time drives the honest per-card "ago" label.
+  assert.ok('checked' in (Object.values(summary.data.monitors)[0] as object))
   const history = await call('/api/status?integration=1')
   assert.ok('incident' in history.data && 'latency' in history.data)
   const view = await call('/api/view?integration=1')

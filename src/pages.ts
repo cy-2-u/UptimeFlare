@@ -69,6 +69,7 @@ export type StatusBoot = {
   up: Record<string, boolean | null>
   incident: Record<string, Incident[]>
   startedAt: Record<string, number>
+  checkedAt: Record<string, number>
   lastPing: Record<string, number>
   maintenances: Maintenance[]
 }
@@ -125,7 +126,7 @@ export function statusPage(boot: StatusBoot) {
 </dialog>`
 }
 
-export type DetailBoot = { monitor: Monitor; up: boolean | null; incident: Incident[]; latency: { time: number; ping: number; loc: string }[]; startedAt?: number; lastUpdate: number; maintenances: Maintenance[] }
+export type DetailBoot = { monitor: Monitor; up: boolean | null; incident: Incident[]; latency: { time: number; ping: number; loc: string }[]; startedAt?: number; checkedAt: number; lastUpdate: number; maintenances: Maintenance[] }
 
 export function detailPage(boot: DetailBoot | null, id: string) {
   if (!boot) return `<div class="detail-wrap"><a href="/" class="back">← 返回状态页</a><p class="empty-state">未找到监测项：${esc(id)}</p></div>`
@@ -137,7 +138,7 @@ export function detailPage(boot: DetailBoot | null, id: string) {
 <article class="detail-card">
 <div class="detail-head">
 <div class="detail-title"><span class="emblem-sm${isUp ? '' : ' bad'}" data-detail-icon>${isUp ? '✔' : '✖'}</span><div><div class="detail-name">${esc(boot.monitor.name)}${boot.monitor.statusPageLink ? `<a href="${esc(boot.monitor.statusPageLink)}" target="_blank" rel="noopener noreferrer" class="ext" aria-label="访问站点">↗</a>` : ''}</div><p class="muted">${esc(host)}</p>${boot.monitor.tooltip ? `<p class="muted">${esc(boot.monitor.tooltip)}</p>` : ''}</div></div>
-<div class="detail-badges"><span class="badge" data-detail-status>${isUp ? '运行正常' : '宕机'}</span><span class="badge" data-detail-uptime>总可用率 —</span><span class="badge" data-detail-ago>— 前更新</span></div>
+<div class="detail-badges"><span class="badge" data-detail-status>${isUp ? '运行正常' : '宕机'}</span><span class="badge" data-detail-uptime>总可用率 —</span><span class="badge" data-detail-ago>— 前检查</span></div>
 </div>
 <section><h3 class="sec-title">可用率历史（90 天）</h3><div class="bars wide" data-bars></div></section>
 <section><h3 class="sec-title">响应时间（近 12 小时）</h3><div class="sparkline" data-sparkline></div></section>

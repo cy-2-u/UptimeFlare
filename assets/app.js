@@ -315,9 +315,14 @@ function initStatusPage(bootstrap) {
     if (updated && lastUpdateSec) updated.textContent = new Date(lastUpdateSec * 1000).toLocaleString('zh-CN', { hour12: false })
   }
 
+  // Each card ages from its own last check, not the snapshot time — a
+  // 60-minute monitor must not claim it was checked ten minutes ago.
   function paintAgo() {
-    if (!lastUpdateSec) return
-    $$('[data-ago]').forEach(el => { el.textContent = fmtAgo(lastUpdateSec) + '前' })
+    bootstrap.monitors.forEach(monitor => {
+      const checked = bootstrap.checkedAt[monitor.id]
+      const el = $('[data-monitor="' + monitor.id + '"] [data-ago]')
+      if (el) el.textContent = checked ? fmtAgo(checked) + '前检查' : ''
+    })
   }
 
   function inMaintenance(monitorId, nowMs) {
@@ -342,8 +347,6 @@ function initStatusPage(bootstrap) {
       const statusLabel = $('[data-status-label]', card)
       if (statusLabel) statusLabel.textContent = '维护中'
     }
-    const ago = $('[data-ago]', card)
-    if (ago && lastUpdateSec) ago.textContent = fmtAgo(lastUpdateSec) + '前'
   })
 
   // Maintenance alerts: active (time-based) and upcoming previews.
@@ -405,6 +408,8 @@ function initStatusPage(bootstrap) {
             if (statusLabel) statusLabel.textContent = status === 'up' ? '运行正常' : status === 'down' ? '宕机' : '等待检查'
           }
         }
+        const agoEl = $('[data-ago]', card)
+        if (agoEl && summary.checked) agoEl.textContent = fmtAgo(summary.checked) + '前检查'
         if (summary.latency == null) return
         const latency = $('[data-latency]', card)
         latency.textContent = summary.latency + 'ms'
@@ -444,7 +449,7 @@ function initDetailPage(bootstrap) {
     uptime.textContent = totals.totalMonitorTime > 0 ? '总可用率 ' + (((totals.totalMonitorTime - totals.totalDownTime) / totals.totalMonitorTime) * 100).toPrecision(4) + '%' : '总可用率 —'
   }
   const ago = $('[data-detail-ago]')
-  if (ago && bootstrap.lastUpdate) ago.textContent = fmtAgo(bootstrap.lastUpdate) + '前更新'
+  if (ago && bootstrap.checkedAt) ago.textContent = fmtAgo(bootstrap.checkedAt) + '前检查'
 
   // Sparkline with hover crosshair + tooltip.
   const spark = $('[data-sparkline]')

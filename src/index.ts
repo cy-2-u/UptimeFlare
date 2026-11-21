@@ -98,7 +98,7 @@ async function page(request: Request, env: Env, ctx: ExecutionContext, path: str
   const snap = result.data!
   if (id) {
     const item = snap.monitors[0]
-    const boot: DetailBoot = { monitor: toTarget(item), up: item.up, incident: item.incidents, latency: item.latency ?? [], ...(item.startedAt > 0 ? { startedAt: item.startedAt } : {}), lastUpdate: snap.updatedAt, maintenances: settings.maintenances }
+    const boot: DetailBoot = { monitor: toTarget(item), up: item.up, incident: item.incidents, latency: item.latency ?? [], ...(item.startedAt > 0 ? { startedAt: item.startedAt } : {}), checkedAt: item.checkedAt, lastUpdate: snap.updatedAt, maintenances: settings.maintenances }
     const body = layout({ title: `${item.name} - ${settings.title}`, site: settings.title, isAdmin, boot, links: settings.links }, detailPage(boot, id))
     return finish(body, key, isAdmin, ctx)
   }
@@ -114,6 +114,7 @@ async function page(request: Request, env: Env, ctx: ExecutionContext, path: str
     up: Object.fromEntries(snap.monitors.map(m => [m.id, m.up])),
     incident: Object.fromEntries(snap.monitors.map(m => [m.id, m.incidents])),
     startedAt: Object.fromEntries(snap.monitors.filter(m => m.startedAt > 0).map(m => [m.id, m.startedAt])),
+    checkedAt: Object.fromEntries(snap.monitors.filter(m => m.checkedAt > 0).map(m => [m.id, m.checkedAt])),
     lastPing: Object.fromEntries(snap.monitors.filter(m => m.ping !== null).map(m => [m.id, m.ping as number])),
     maintenances: settings.maintenances,
   }
@@ -168,7 +169,7 @@ export async function handle(request: Request, env: Env, ctx: ExecutionContext):
     let data: unknown = snapshot
     if (path === '/api/data') data = {
       up: snapshot.up, down: snapshot.down, updatedAt: snapshot.updatedAt, maintenances: snapshot.maintenances,
-      monitors: Object.fromEntries(snapshot.monitors.map(m => [m.id, { up: m.up, latency: m.ping, location: m.location, message: m.up === null ? 'Pending first check' : m.up ? 'OK' : m.error }])),
+      monitors: Object.fromEntries(snapshot.monitors.map(m => [m.id, { up: m.up, checked: m.checkedAt, latency: m.ping, location: m.location, message: m.up === null ? 'Pending first check' : m.up ? 'OK' : m.error }])),
     }
     if (path === '/api/status') data = {
       lastUpdate: snapshot.updatedAt, overallUp: snapshot.up, overallDown: snapshot.down,
