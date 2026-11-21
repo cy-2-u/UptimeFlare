@@ -2,7 +2,7 @@ import type { Credentials } from './types'
 
 const encoder = new TextEncoder()
 const SESSION_TTL = 2592000 // 30 days, shared by the token payload and the cookie
-export const hex = (bytes: Uint8Array) => Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('')
+const hex = (bytes: Uint8Array) => Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('')
 const unhex = (value: string) => Uint8Array.from(value.match(/../g) ?? [], v => parseInt(v, 16))
 export const random = () => hex(crypto.getRandomValues(new Uint8Array(24)))
 // Constant-time string comparison for credential equality.
@@ -17,7 +17,7 @@ export async function passwordHash(password: string, salt: string, algorithm?: s
   const key = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits'])
   return hex(new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: encoder.encode(salt), iterations: 100000 }, key, 256)))
 }
-export async function sign(secret: string, message: string) {
+async function sign(secret: string, message: string) {
   const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
   return hex(new Uint8Array(await crypto.subtle.sign('HMAC', key, encoder.encode(message))))
 }

@@ -227,11 +227,13 @@ function renderHistory(bootstrap) {
       const ongoing = incident.end == null
       const card = document.createElement('div')
       card.className = 'incident-card'
+      // Monitor names are data, never markup — same contract as the server's
+      // esc(). Only static strings and formatted numbers ride innerHTML.
       card.innerHTML =
-        '<div class="incident-head"><div class="incident-name"><span class="dot ' + (ongoing ? 'dot-down' : 'dot-pending') + '"></span>' +
-        incident.monitorName + '</div><span class="badge">' + (ongoing ? '进行中' : '已恢复') + '</span></div>' +
+        '<div class="incident-head"><div class="incident-name"><span class="dot ' + (ongoing ? 'dot-down' : 'dot-pending') + '"></span><span data-inc-name></span></div><span class="badge">' + (ongoing ? '进行中' : '已恢复') + '</span></div>' +
         '<div class="incident-time"><span>' + fmtTime(incident.start) + '</span><span style="color:#cbd5e1">→</span><span>' +
         (ongoing ? '进行中' : fmtTime(incident.end)) + '</span><span style="color:#cbd5e1">|</span><span>' + fmtDuration(incident.duration) + '</span></div>'
+      $('[data-inc-name]', card).textContent = incident.monitorName
       incident.errors.forEach(err => {
         const div = document.createElement('div')
         div.className = 'incident-err'
@@ -359,9 +361,10 @@ function initStatusPage(bootstrap) {
     const div = document.createElement('div')
     div.className = 'maint' + (active ? '' : ' upcoming') + ' ' + (m.color || 'amber')
     div.innerHTML =
-      '<span class="maint-title">' + (m.title || (active ? '计划维护' : '维护预告')) + '</span>' +
+      '<span class="maint-title"></span>' +
       '<span class="maint-time">' + (active ? '' : '开始于 ') + fmtTime(Math.round(startMs / 1000)) + (m.end ? ' → ' + fmtTime(Math.round(new Date(m.end).getTime() / 1000)) : '') + '</span>' +
       '<span class="maint-body"></span>'
+    $('.maint-title', div).textContent = m.title || (active ? '计划维护' : '维护预告')
     $('.maint-body', div).textContent = m.body
     box.appendChild(div)
   })
