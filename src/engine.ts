@@ -121,7 +121,12 @@ export class Engine {
       let admin = await this.storage.get<Credentials>('admin')
       const username = String(input.username ?? '').trim()
       const password = String(input.password ?? '')
-      if (input.action === 'logout') return { data: { ok: true }, cookie: sessionCookie('', secure) }
+      // Logout rotates the signing key: with stateless tokens, deleting the
+      // cookie alone leaves a copied session valid for its full 30-day TTL.
+      if (input.action === 'logout') {
+        if (admin) await this.storage.put({ admin: { ...admin, sessionKey: random() } })
+        return { data: { ok: true }, cookie: sessionCookie('', secure) }
+      }
       if (input.action === 'setup') {
         if (admin) throw new HttpError('管理员已存在', 409)
         if (!username || username.length > 80 || password.length < 8 || password.length > 1024) throw new HttpError('账号需要 1–80 个字符，密码需要 8–1024 个字符')

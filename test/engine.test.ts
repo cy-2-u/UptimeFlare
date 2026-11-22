@@ -189,6 +189,11 @@ test('session does not disclose its signing secret and rejects tampering and exp
   assert.equal(await authenticated(admin, 'status_admin_session=%invalid', network.now()), false)
   const results = await Promise.allSettled([engine.request('POST', '/api/admin', { action: 'setup', username: 'a', password: 'password123' }, '', true), engine.request('POST', '/api/admin', { action: 'setup', username: 'b', password: 'password123' }, '', true)])
   assert.ok(results.every(result => result.status === 'rejected'))
+  // Logout rotates the signing key: a copied token dies with the session.
+  await engine.request('POST', '/api/admin', { action: 'logout' }, cookie, true)
+  const rotated = await storage.get<any>('admin')
+  assert.notEqual(rotated.sessionKey, admin.sessionKey)
+  assert.equal(await authenticated(rotated, cookie, network.now()), false)
 })
 
 test('new installation races allow exactly one administrator', async t => {
