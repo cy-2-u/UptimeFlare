@@ -383,42 +383,50 @@ function initStatusPage(bootstrap) {
   if (openHistory) openHistory.addEventListener('click', () => openHistoryDialog(bootstrap))
 
   // Light live updates (overall counters, latency, ago) from the cached API.
-  setInterval(async () => {
+  // While any monitor is still awaiting its first check, poll fast so a newly
+  // added site shows real status shortly after the check lands; once every
+  // card has data, coast at the two-minute cadence.
+  const poll = async () => {
+    let pending = false
     try {
       const res = await fetch('/api/data', { cache: 'no-store' })
-      if (!res.ok) return
-      const data = await res.json()
-      overallUp = data.up
-      overallDown = data.down
-      lastUpdateSec = data.updatedAt || lastUpdateSec
-      paintOverall()
-      paintAgo()
-      data.monitors && Object.keys(data.monitors).forEach(id => {
-        const card = $('[data-monitor="' + id + '"]')
-        const summary = data.monitors[id]
-        if (!card || !summary) return
-        // Keep each card's dot/label in step with the banner (maintenance
-        // overrides stay untouched — a maintenance window is not an outage).
-        const dot = $('[data-dot]', card)
-        if (dot && !dot.classList.contains('dot-maintenance')) {
-          const status = summary.up == null ? 'pending' : summary.up ? 'up' : 'down'
-          if (!dot.classList.contains('dot-' + status)) {
-            dot.className = 'dot dot-' + status
-            const statusLabel = $('[data-status-label]', card)
-            if (statusLabel) statusLabel.textContent = status === 'up' ? '运行正常' : status === 'down' ? '宕机' : '等待检查'
+      if (res.ok) {
+        const data = await res.json()
+        overallUp = data.up
+        overallDown = data.down
+        lastUpdateSec = data.updatedAt || lastUpdateSec
+        paintOverall()
+        paintAgo()
+        data.monitors && Object.keys(data.monitors).forEach(id => {
+          const card = $('[data-monitor="' + id + '"]')
+          const summary = data.monitors[id]
+          if (!card || !summary) return
+          // Keep each card's dot/label in step with the banner (maintenance
+          // overrides stay untouched — a maintenance window is not an outage).
+          const dot = $('[data-dot]', card)
+          if (dot && !dot.classList.contains('dot-maintenance')) {
+            const status = summary.up == null ? 'pending' : summary.up ? 'up' : 'down'
+            if (!dot.classList.contains('dot-' + status)) {
+              dot.className = 'dot dot-' + status
+              const statusLabel = $('[data-status-label]', card)
+              if (statusLabel) statusLabel.textContent = status === 'up' ? '运行正常' : status === 'down' ? '宕机' : '等待检查'
+            }
           }
-        }
-        const agoEl = $('[data-ago]', card)
-        if (agoEl && summary.checked) agoEl.textContent = fmtAgo(summary.checked) + '前检查'
-        if (summary.latency == null) return
-        const latency = $('[data-latency]', card)
-        latency.textContent = summary.latency + 'ms'
-        latency.style.color = summary.latency > 500 ? '#d97706' : '#334155'
-      })
+          const agoEl = $('[data-ago]', card)
+          if (agoEl && summary.checked) agoEl.textContent = fmtAgo(summary.checked) + '前检查'
+          if (summary.latency == null) return
+          const latency = $('[data-latency]', card)
+          latency.textContent = summary.latency + 'ms'
+          latency.style.color = summary.latency > 500 ? '#d97706' : '#334155'
+        })
+        pending = Object.values(data.monitors || {}).some(summary => summary.up == null)
+      }
     } catch (e) {
       /* offline is fine; the next tick retries */
     }
-  }, 120000)
+    setTimeout(poll, pending ? 5000 : 120000)
+  }
+  setTimeout(poll, 15000)
 }
 
 // ---- detail page ----------------------------------------------------------

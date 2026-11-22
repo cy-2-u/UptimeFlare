@@ -351,6 +351,8 @@ main { max-width: 80rem; margin: 0 auto; padding: 0 1rem 4rem; }
 
 .card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem; padding: 0 0.25rem; min-height: 3rem; }
 .card-head h3 { font-size: 18px; font-weight: 600; letter-spacing: -0.025em; color: #1e293b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-head h3 a { color: inherit; }
+.card-head h3 a:hover { text-decoration: underline; text-underline-offset: 3px; }
 .card-head .host { margin-top: 4px; font-family: ui-monospace, monospace; font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .bars-meta { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; font-weight: 500; color: var(--muted); }

@@ -94,7 +94,7 @@ export function statusPage(boot: StatusBoot) {
     const ping = boot.lastPing[monitor.id]
     return `<article class="card" data-monitor="${esc(monitor.id)}">
 <div class="card-preview"><div class="card-chrome"><span></span><span></span><span></span><span class="chrome-host">${esc(hostnameOf(monitor.target))}</span></div><div class="card-shot">${shot}</div></div>
-<div class="card-head"><div class="min-w-0"><h3>${esc(monitor.name)}</h3><div class="host">${esc(hostnameOf(monitor.target))}</div></div><span class="badge">${esc(monitor.group)}</span></div>
+<div class="card-head"><div class="min-w-0"><h3><a href="/m/${esc(monitor.id)}">${esc(monitor.name)}</a></h3><div class="host">${esc(hostnameOf(monitor.target))}</div></div><span class="badge">${esc(monitor.group)}</span></div>
 <div><div class="bars-meta"><span>近 30 天</span><span class="mono" data-percent>—</span></div><div class="bars" data-bars></div></div>
 <div class="card-foot"><span class="dot dot-${status}" data-dot></span><span data-status-label>${STATUS_LABEL[status]}</span><span class="muted" data-ago></span><span class="latency" data-latency>${ping ? `${ping}ms` : '—'}</span></div>
 </article>`
