@@ -53,6 +53,9 @@ export class Network implements Runtime {
   active = 0
   maxActive = 0
   gate?: Promise<void>
+  // Notifications ride the configured webhook host; tests swap the webhook via
+  // settings, so the filter tracks any URL that is not a probe target.
+  webhook = 'timelynotify'
   now = () => this.time
   sleep = async (ms: number) => { this.time += ms }
   fetch: typeof fetch = async (input, _init) => {
@@ -61,13 +64,13 @@ export class Network implements Runtime {
     this.active++
     this.maxActive = Math.max(this.maxActive, this.active)
     try {
-      if (this.gate && !url.includes('timelynotify')) await this.gate
-      if (this.failure && !url.includes('timelynotify')) throw this.failure
+      if (this.gate && !url.includes(this.webhook)) await this.gate
+      if (this.failure && !url.includes(this.webhook)) throw this.failure
       this.time += 25
-      return new Response('ok', { status: url.includes('timelynotify') ? 200 : this.statuses.shift() ?? 200 })
+      return new Response('ok', { status: url.includes(this.webhook) ? 200 : this.statuses.shift() ?? 200 })
     } finally { this.active-- }
   }
   advance(seconds = 600) { this.time += seconds * 1000 }
-  get checks() { return this.requests.filter(url => !url.includes('timelynotify')) }
-  get notices() { return this.requests.filter(url => url.includes('timelynotify')) }
+  get checks() { return this.requests.filter(url => !url.includes(this.webhook)) }
+  get notices() { return this.requests.filter(url => url.includes(this.webhook)) }
 }

@@ -1,6 +1,5 @@
-import { HttpError, type Monitor, type Notice, type Runtime, type Settings, type State } from './types'
+import { HttpError, type Monitor, type Notice, type Runtime, type State } from './types'
 
-const DAY = 86400
 const text = (value: unknown) => String(value ?? '').trim()
 function url(value: unknown, optional = false): string | undefined {
   const input = text(value)
@@ -22,11 +21,11 @@ export function parseMonitor(input: Record<string, unknown>, previous?: Monitor)
   if (!Number.isInteger(intervalMinutes) || intervalMinutes < 10 || intervalMinutes > 1440 || intervalMinutes % 10) throw new HttpError('间隔需要是 10 的倍数（10–1440 分钟）')
   const id = previous?.id ?? (text(data.id) || crypto.randomUUID())
   if (!/^[a-zA-Z0-9_-]{1,80}$/.test(id)) throw new HttpError('监测 ID 格式无效')
-  return { id, name, target, timeout, intervalMinutes, group: text(data.group) || '核心服务', preview: url(data.preview, true), statusPageLink: url(data.statusPageLink, true), tooltip: text(data.tooltip) || undefined }
+  return { id, name, target, timeout, intervalMinutes, group: text(data.group) || '核心服务', preview: url(data.preview, true), statusPageLink: url(data.statusPageLink, true) }
 }
 
 export class ProbeBudget extends Error {}
-export async function check(monitor: Monitor, runtime: Runtime, loc: string) {
+export async function check(monitor: Monitor, runtime: Runtime) {
   let result = { up: false, ping: 0, error: '' }
   for (let attempt = 0; attempt < 2; attempt++) {
     const start = runtime.now()
@@ -55,10 +54,10 @@ export async function check(monitor: Monitor, runtime: Runtime, loc: string) {
     if (result.up || attempt === 1) break
     await runtime.sleep(3000)
   }
-  return { ...result, time: Math.floor(runtime.now() / 1000), loc }
+  return { ...result, time: Math.floor(runtime.now() / 1000) }
 }
 
-export function transition(monitor: Monitor, original: State, result: Awaited<ReturnType<typeof check>>, config: Settings): { state: State; notices: Notice[] } {
+export function transition(monitor: Monitor, original: State, result: Awaited<ReturnType<typeof check>>): { state: State; notices: Notice[] } {
   const state = structuredClone(original)
   const notices: Notice[] = []
   const last = state.incidents.at(-1)
@@ -67,7 +66,7 @@ export function transition(monitor: Monitor, original: State, result: Awaited<Re
   state.startedAt ||= result.time
   state.checkedAt = result.time
   state.latency = state.latency.filter(p => p.time >= result.time - 43200)
-  state.latency.push({ time: result.time, ping: result.ping, loc: result.loc })
+  state.latency.push({ time: result.time, ping: result.ping })
   state.incidents = state.incidents.filter(i => i.end === null || i.end >= result.time - 90 * DAY)
   const notice = (up: boolean, first: boolean, start: number, reason: string) => notices.push({ monitor, up, first, start, time: result.time, reason })
   if (result.up) {
@@ -84,12 +83,9 @@ export function transition(monitor: Monitor, original: State, result: Awaited<Re
       last.start.push(result.time)
       last.error.push(result.error)
     }
-    const open = state.incidents.at(-1)!
-    if (!state.notified && result.time - open.start[0] >= config.notification.gracePeriod * 60) {
-      notice(false, true, open.start[0], result.error)
+    if (!state.notified) {
+      notice(false, true, state.incidents.at(-1)!.start[0], result.error)
       state.notified = true
-    } else if (state.notified && changedError && !config.notification.skipErrorChangeNotification) {
-      notice(false, false, open.start[0], result.error)
     }
   }
   state.up = result.up
@@ -97,6 +93,4 @@ export function transition(monitor: Monitor, original: State, result: Awaited<Re
   return { state, notices }
 }
 
-export function activeMaintenance(config: Settings, id: string, time: number) {
-  return config.maintenances.some(m => (m.monitors ?? []).includes(id) && time >= new Date(m.start).getTime() && (m.end === undefined || time <= new Date(m.end).getTime()))
-}
+const DAY = 86400

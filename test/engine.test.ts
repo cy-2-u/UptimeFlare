@@ -5,7 +5,6 @@ import { settings } from '../src/config'
 import { freshState, stateKey, type Monitor, type State } from '../src/types'
 import { Kernel, Network } from './kernel'
 import { authenticated, passwordHash } from '../src/auth'
-import { importLegacy } from '../src/legacy'
 import { parseMonitor } from '../src/monitor'
 
 const monitor: Monitor = { id: 'example', name: '示例', target: 'https://example.com', group: '核心服务', timeout: 3000, intervalMinutes: 10 }
@@ -39,12 +38,13 @@ test('complete user journey: setup, add, check, failure, change, recovery, edit,
   network.advance()
   network.statuses = [502, 502]
   await engine.run('TEST')
+  // The changed error is recorded in the incident history but does not re-notify.
   assert.deepEqual((await state())!.incidents[0].error, ['HTTP 503', 'HTTP 502'])
-  assert.equal(network.notices.length, 2)
+  assert.equal(network.notices.length, 1)
   network.advance()
   await engine.run('TEST')
   assert.ok((await state())!.incidents[0].end)
-  assert.equal(network.notices.length, 3)
+  assert.equal(network.notices.length, 2)
   await engine.request('PUT', '/api/monitors', { id: monitor.id, name: '改名', intervalMinutes: 20 }, cookie, true)
   const restarted = new Engine(storage, network, settings)
   assert.equal((await restarted.snapshot(monitor.id)).monitors[0].name, '改名')
@@ -95,27 +95,6 @@ test('failed atomic commit stores nothing and sends nothing; next run recovers',
   assert.equal(network.notices.length, 1)
 })
 
-test('grace period suppresses both initial and orphan recovery notices', async t => {
-  const config = structuredClone(settings)
-  config.notification.gracePeriod = 20
-  const { storage, network, engine, state } = fixture(t, config)
-  await storage.put({ monitors: [monitor] })
-  network.statuses = [503, 503]
-  await engine.run()
-  assert.equal(network.notices.length, 0)
-  network.advance()
-  await engine.run()
-  assert.equal(network.notices.length, 0)
-  assert.ok((await state())!.incidents[0].end)
-  network.advance()
-  network.statuses = [503, 503]
-  await engine.run()
-  network.advance(1200)
-  network.statuses = [503, 503]
-  await engine.run()
-  assert.equal(network.notices.length, 1)
-})
-
 test('overlapping alarms deduplicate; reads stay responsive and deletion waits', async t => {
   const { storage, network, engine, state } = fixture(t)
   const cookie = await login(engine)
@@ -158,7 +137,7 @@ test('shorter interval skips cleanly; healthy monitors prune old incidents and l
   const old = freshState()
   old.startedAt = network.now() / 1000 - 100 * 86400
   old.incidents = [{ start: [old.startedAt], end: old.startedAt + 60, error: ['old'] }]
-  old.latency = [{ time: old.startedAt, ping: 70000, loc: 'OLD' }]
+  old.latency = [{ time: old.startedAt, ping: 70000 }]
   await storage.put({ monitors: [{ ...monitor, intervalMinutes: 20 }], [stateKey(monitor.id)]: old })
   await engine.run()
   assert.equal((await state())!.incidents.length, 0)
@@ -202,15 +181,24 @@ test('new installation races allow exactly one administrator', async t => {
   assert.equal(results.filter(r => r.status === 'fulfilled').length, 1)
 })
 
-test('maintenance and skip lists suppress outbound notifications while preserving outages', async t => {
-  const config = structuredClone(settings)
-  config.maintenances = [{ monitors: [monitor.id], start: 0, body: '维护' }]
-  const { storage, network, engine, state } = fixture(t, config)
+test('settings persist across restart and drive the notification webhook', async t => {
+  const { storage, network, engine } = fixture(t)
+  const cookie = await login(engine)
+  const saved = await engine.request('PUT', '/api/settings', { title: '新标题', timeZone: 'Europe/Berlin', webhook: 'https://hook.example.com/abc' }, cookie, true)
+  assert.equal((saved.data as { title: string }).title, '新标题')
+  network.webhook = 'hook.example.com' // teach the traffic splitter the new webhook host
   await storage.put({ monitors: [monitor] })
   network.statuses = [503, 503]
   await engine.run()
-  assert.equal((await state())!.up, false)
-  assert.equal(network.notices.length, 0)
+  // The outage notice rides the configured webhook, not the factory default.
+  assert.equal(network.notices.length, 1)
+  assert.ok(network.notices[0].startsWith('https://hook.example.com/abc/'))
+  // A restart loads settings from storage — the title survives.
+  const restarted = new Engine(storage, network, settings)
+  assert.equal((await restarted.snapshot()).title, '新标题')
+  // Validation: bad timezone and webhook are rejected, blank webhook clears notifications.
+  await assert.rejects(engine.request('PUT', '/api/settings', { title: 'x', timeZone: 'Mars/Olympus', webhook: '' }, cookie, true), /时区/)
+  await assert.rejects(engine.request('PUT', '/api/settings', { title: 'x', timeZone: 'Asia/Shanghai', webhook: 'ftp://x' }, cookie, true), /通知地址/)
 })
 
 test('supervisor re-arms missing alarms and health reports stale data honestly', async t => {
@@ -223,67 +211,6 @@ test('supervisor re-arms missing alarms and health reports stale data honestly',
   await engine.supervise()
   assert.equal(storage.alarm, network.now() + 1000)
   assert.equal((await engine.health()).healthy, false)
-})
-
-test('legacy migration preserves credentials, incidents and latency without changing D1', async t => {
-  const { storage, engine } = fixture(t)
-  await storage.put({ monitors: [monitor] })
-  const bytes = (values: number[], size: number) => { const buffer = new ArrayBuffer(values.length * size); const view = new DataView(buffer); values.forEach((n, i) => size === 4 ? view.setUint32(i * size, n, true) : view.setUint16(i * size, n, true)); return Buffer.from(buffer).toString('hex') }
-  const rows = [
-    { key: 'admin_credentials', value: JSON.stringify({ username: 'old', salt: 'salt', passwordHash: 'hash' }) },
-    { key: 'state:meta', value: '{"lastUpdate":1700000000}' },
-    { key: `state:lat:${monitor.id}`, value: JSON.stringify({ startedAt: 1699990000, lastStatus: 'down', lastErr: 'HTTP 503', downNotifiedAt: 1700000000, time: bytes([1700000000], 4), ping: bytes([3000], 2), loc: { v: ['SEA'], c: [1] } }) },
-    { key: `state:inc:${monitor.id}`, value: JSON.stringify({ start: [[1700000000]], end: [null], error: [['HTTP 503']] }) },
-  ]
-  let reads = 0
-  const db = { prepare: () => ({ all: async () => { reads++; return { results: rows } } }) } as unknown as D1Database
-  await importLegacy(storage, db)
-  await importLegacy(storage, db)
-  assert.equal(reads, 1)
-  const imported = (await engine.snapshot(monitor.id)).monitors[0]
-  assert.equal(imported.up, false)
-  assert.equal(imported.latency![0].loc, 'SEA')
-  assert.equal(imported.incidents[0].end, null)
-  assert.equal((await storage.get<any>('admin')).username, 'old')
-})
-
-test('imported legacy credentials still log in through the sha-256 fallback path', async t => {
-  const { storage, engine } = fixture(t)
-  const salt = 'oldsalt'
-  const hash = await passwordHash('legacy-password', salt) // no algorithm → SHA-256, the v4 credential shape
-  const rows = [{ key: 'admin_credentials', value: JSON.stringify({ username: 'old', salt, passwordHash: hash }) }]
-  const db = { prepare: () => ({ all: async () => ({ results: rows }) }) } as unknown as D1Database
-  await importLegacy(storage, db)
-  const login = await engine.request('POST', '/api/admin', { action: 'login', username: 'old', password: 'legacy-password' }, '', true)
-  const check = await engine.request('GET', '/api/admin', {}, login.cookie!, true)
-  assert.equal((check.data as { isAuthenticated: boolean }).isAuthenticated, true)
-})
-
-test('invalid legacy row aborts the migration atomically and can be retried', async t => {
-  const { storage } = fixture(t)
-  await storage.put({ monitors: [monitor] })
-  const db = { prepare: () => ({ all: async () => ({ results: [{ key: 'state:meta', value: '{broken' }] }) }) } as unknown as D1Database
-  await assert.rejects(importLegacy(storage, db))
-  assert.equal(await storage.get('version'), undefined)
-  assert.deepEqual(await storage.get('monitors'), [monitor])
-})
-
-test('pending deletes from the old version do not resurrect during migration', async t => {
-  const { storage, engine } = fixture(t)
-  await storage.put({ monitors: [monitor], pendingDeletes: [monitor.id] })
-  const rows = [{ key: 'state:inc:' + monitor.id, value: JSON.stringify({ start: [[1700000000]], end: [null], error: [['HTTP 503']] }) }]
-  const db = { prepare: () => ({ all: async () => ({ results: rows }) }) } as unknown as D1Database
-  await importLegacy(storage, db)
-  assert.equal(await storage.get('pendingDeletes'), undefined)
-  assert.deepEqual(await engine.snapshot(), { title: settings.title, links: settings.links, maintenances: [], updatedAt: 0, nextAlarm: null, up: 0, down: 0, monitors: [] })
-})
-
-test('existing monitors cannot silently migrate without the old database', async t => {
-  const { storage } = fixture(t)
-  await storage.put({ monitors: [monitor] })
-  await assert.rejects(importLegacy(storage), /legacy D1/)
-  assert.equal(await storage.get('version'), undefined)
-  assert.deepEqual(await storage.get('monitors'), [monitor])
 })
 
 test('100-monitor simulation respects concurrency and a 24-hour write budget', async t => {

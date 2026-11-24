@@ -181,7 +181,6 @@ main { max-width: 80rem; margin: 0 auto; padding: 0 1rem 4rem; }
 .dot-up { background: var(--ok); }
 .dot-down { background: var(--bad); }
 .dot-pending { background: var(--faint); }
-.dot-maintenance { background: var(--warn); }
 
 /* ---- hero -------------------------------------------------------------------- */
 
@@ -416,32 +415,6 @@ main { max-width: 80rem; margin: 0 auto; padding: 0 1rem 4rem; }
   font-weight: 700;
   color: var(--ink-soft);
 }
-
-/* ---- maintenance alerts ----------------------------------------------------------- */
-
-.maint-alerts { margin-top: 2rem; display: flex; flex-direction: column; gap: 0.75rem; }
-.maint {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem 0.75rem;
-  border: 1px solid var(--line);
-  border-left: 4px solid;
-  border-radius: var(--r-md);
-  padding: 0.75rem 1rem;
-  font-size: 13px;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
-}
-.maint.amber { background: #fffbeb; border-left-color: var(--warn); }
-.maint.blue { background: #eff6ff; border-left-color: #3b82f6; }
-.maint.red { background: #fef2f2; border-left-color: #ef4444; }
-.maint.gray { background: #f9fafb; border-left-color: #9ca3af; }
-.maint.green { background: #f0fdf4; border-left-color: #22c55e; }
-.maint .maint-title { font-weight: 700; }
-.maint.amber .maint-title { color: var(--warn-deep); }
-.maint.blue .maint-title { color: #2563eb; }
-.maint .maint-time { color: var(--muted); font-size: 12px; }
-.maint .maint-body { flex: 1; min-width: 12rem; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---- dialogs ----------------------------------------------------------------------- */
 
@@ -745,7 +718,3 @@ dialog.dlg::backdrop { background: rgba(15, 23, 42, 0.3); backdrop-filter: blur(
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
-
-/* Upcoming maintenance shares the alert styling with a neutral tone. */
-.maint.upcoming { background: #f8fafc; border-left-color: #9ca3af; }
-.maint.upcoming .maint-title { color: var(--ink-soft); }

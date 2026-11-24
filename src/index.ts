@@ -1,13 +1,11 @@
 import { DurableObject } from 'cloudflare:workers'
 import { Engine } from './engine'
 import { settings } from './config'
-import { importLegacy } from './legacy'
 import { detailPage, INTERVAL_OPTIONS, layout, loginPage, managePage, statusPage, TIMEOUT_OPTIONS, type DetailBoot, type StatusBoot } from './pages'
 import { HttpError, type Monitor, type Storage } from './types'
 
 type Env = {
   MONITOR_SCHEDULER_DO: DurableObjectNamespace<MonitorScheduler>
-  UPTIMEFLARE_D1?: D1Database
   MONITOR_TRIGGER_SECRET?: string
 }
 export class MonitorScheduler extends DurableObject<Env> {
@@ -15,10 +13,6 @@ export class MonitorScheduler extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
     const storage = ctx.storage as unknown as Storage
-    // A failed import must never brick the object: the monitor list already
-    // lives in storage, so the engine starts regardless and the (idempotent)
-    // import retries on the next wake.
-    ctx.blockConcurrencyWhile(() => importLegacy(storage, env.UPTIMEFLARE_D1).catch(error => console.error('Legacy import deferred to next wake:', error)))
     this.engine = new Engine(storage, { now: Date.now, fetch: globalThis.fetch.bind(globalThis), sleep: ms => new Promise(resolve => setTimeout(resolve, ms)) }, settings)
   }
   async snapshot(id?: string) {
@@ -49,7 +43,7 @@ const stub = (env: Env) => env.MONITOR_SCHEDULER_DO.get(env.MONITOR_SCHEDULER_DO
 
 // The client boot payload: one shape feeds both the server-rendered HTML and
 // the browser runtime, so SSR markup and JS rendering can never disagree.
-const toTarget = (m: Monitor) => ({ id: m.id, name: m.name, target: m.target, group: m.group, timeout: m.timeout, intervalMinutes: m.intervalMinutes, ...(m.preview ? { preview: m.preview } : {}), ...(m.statusPageLink ? { statusPageLink: m.statusPageLink } : {}), ...(m.tooltip ? { tooltip: m.tooltip } : {}) })
+const toTarget = (m: Monitor) => ({ id: m.id, name: m.name, target: m.target, group: m.group, timeout: m.timeout, intervalMinutes: m.intervalMinutes, ...(m.preview ? { preview: m.preview } : {}), ...(m.statusPageLink ? { statusPageLink: m.statusPageLink } : {}) })
 
 type AdminInfo = { hasAdmin: boolean; isAuthenticated: boolean }
 
@@ -68,8 +62,9 @@ async function page(request: Request, env: Env, ctx: ExecutionContext, path: str
     const result = await backend.request('GET', '/api/monitors', {}, cookie, secure)
     if (result.status !== 200) return redirect('/login')
     const monitors = (JSON.parse(result.body) as { monitors: Monitor[] }).monitors
+    const settingsData = JSON.parse((await backend.request('GET', '/api/settings', {}, cookie, secure)).body) as { title: string; timeZone: string; webhook: string }
     const boot = { timeoutOptions: TIMEOUT_OPTIONS, intervalOptions: INTERVAL_OPTIONS, monitors: monitors.map(toTarget) }
-    return html(layout({ title: '站点管理', site: settings.title, isAdmin: true, manage: true, boot, links: settings.links }, managePage(monitors)), 'private, no-store')
+    return html(layout({ title: '站点管理', site: settingsData.title, isAdmin: true, manage: true, boot }, managePage(monitors, settingsData)), 'private, no-store')
   }
   if (path === '/login') {
     // hasAdmin is cookie-independent: the very visitor who needs this page
@@ -77,7 +72,8 @@ async function page(request: Request, env: Env, ctx: ExecutionContext, path: str
     const admin = await adminInfo()
     if (admin?.isAuthenticated === true) return redirect('/manage')
     const hasAdmin = admin?.hasAdmin === true
-    return html(layout({ title: hasAdmin ? '管理员登录' : '设置管理员', site: settings.title, isAdmin: false, login: true, links: settings.links }, loginPage(hasAdmin)), 'private, no-store')
+    const siteTitle = hasAdmin ? (JSON.parse((await backend.request('GET', '/api/settings', {}, '', secure)).body) as { title: string }).title : settings.title
+    return html(layout({ title: hasAdmin ? '管理员登录' : '设置管理员', site: siteTitle, isAdmin: false, login: true }, loginPage(hasAdmin)), 'private, no-store')
   }
 
   // / and /m/:id — anonymous visitors share one edge-cached render; a valid
@@ -93,17 +89,17 @@ async function page(request: Request, env: Env, ctx: ExecutionContext, path: str
   const result = await backend.snapshot(id)
   if (result.error) {
     if (result.error.status !== 404) throw new HttpError(result.error.message, result.error.status)
-    return html(layout({ title: '未找到监测项', site: settings.title, isAdmin, links: settings.links }, detailPage(null, id ?? '')), 'private, no-store', 404)
+    return html(layout({ title: '未找到监测项', site: settings.title, isAdmin }, detailPage(null, id ?? '')), 'private, no-store', 404)
   }
   const snap = result.data!
   if (id) {
     const item = snap.monitors[0]
-    const boot: DetailBoot = { monitor: toTarget(item), up: item.up, incident: item.incidents, latency: item.latency ?? [], ...(item.startedAt > 0 ? { startedAt: item.startedAt } : {}), checkedAt: item.checkedAt, maintenances: settings.maintenances }
-    const body = layout({ title: `${item.name} - ${settings.title}`, site: settings.title, isAdmin, boot, links: settings.links }, detailPage(boot, id))
+    const boot: DetailBoot = { monitor: toTarget(item), up: item.up, incident: item.incidents, latency: item.latency ?? [], ...(item.startedAt > 0 ? { startedAt: item.startedAt } : {}), checkedAt: item.checkedAt }
+    const body = layout({ title: `${item.name} - ${snap.title}`, site: snap.title, isAdmin, boot }, detailPage(boot, id))
     return finish(body, key, isAdmin, ctx)
   }
   const boot: StatusBoot = {
-    title: settings.title,
+    title: snap.title,
     lastUpdate: snap.updatedAt,
     // Stale = rounds stopped while monitors exist (the cron supervisor would
     // normally prevent this; the banner is the honest last line of defense).
@@ -116,9 +112,8 @@ async function page(request: Request, env: Env, ctx: ExecutionContext, path: str
     startedAt: Object.fromEntries(snap.monitors.filter(m => m.startedAt > 0).map(m => [m.id, m.startedAt])),
     checkedAt: Object.fromEntries(snap.monitors.filter(m => m.checkedAt > 0).map(m => [m.id, m.checkedAt])),
     lastPing: Object.fromEntries(snap.monitors.filter(m => m.ping !== null).map(m => [m.id, m.ping as number])),
-    maintenances: settings.maintenances,
   }
-  return finish(layout({ title: settings.title, site: settings.title, isAdmin, boot, links: settings.links }, statusPage(boot)), key, isAdmin, ctx)
+  return finish(layout({ title: snap.title, site: snap.title, isAdmin, boot }, statusPage(boot)), key, isAdmin, ctx)
 }
 function finish(body: string, key: string, isAdmin: boolean, ctx: ExecutionContext) {
   const response = html(body, isAdmin ? 'private, no-store' : 'public, max-age=0, s-maxage=30')
@@ -141,7 +136,7 @@ export async function handle(request: Request, env: Env, ctx: ExecutionContext):
       ctx.waitUntil(backend.runNow())
       return json({ triggered: true }, 202, { 'cache-control': 'no-store' })
     }
-    if (path === '/api/admin' || path === '/api/monitors') {
+    if (['/api/admin', '/api/monitors', '/api/settings'].includes(path)) {
       let input: Record<string, unknown> = {}
       if (request.method !== 'GET') {
         try { input = await request.json() as Record<string, unknown> }
@@ -168,8 +163,8 @@ export async function handle(request: Request, env: Env, ctx: ExecutionContext):
     const snapshot = result.data!
     let data: unknown = snapshot
     if (path === '/api/data') data = {
-      up: snapshot.up, down: snapshot.down, updatedAt: snapshot.updatedAt, maintenances: snapshot.maintenances,
-      monitors: Object.fromEntries(snapshot.monitors.map(m => [m.id, { up: m.up, checked: m.checkedAt, latency: m.ping, location: m.location, message: m.up === null ? 'Pending first check' : m.up ? 'OK' : m.error }])),
+      up: snapshot.up, down: snapshot.down, updatedAt: snapshot.updatedAt,
+      monitors: Object.fromEntries(snapshot.monitors.map(m => [m.id, { up: m.up, checked: m.checkedAt, latency: m.ping, message: m.up === null ? 'Pending first check' : m.up ? 'OK' : m.error }])),
     }
     if (path === '/api/status') data = {
       lastUpdate: snapshot.updatedAt, overallUp: snapshot.up, overallDown: snapshot.down,

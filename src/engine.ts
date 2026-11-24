@@ -10,7 +10,12 @@ export class Engine {
   // Edited monitors skip the interval gate for one round: a changed target
   // must not keep showing the old address's result for up to ten minutes.
   private forceNext = new Set<string>()
-  constructor(private storage: Storage, private runtime: Runtime, private config: Settings) {}
+  private config: Settings
+  constructor(private storage: Storage, private runtime: Runtime, defaults: Settings) {
+    // Live settings come from storage; a fresh install seeds the factory defaults.
+    this.config = defaults
+    void storage.get<Settings>('settings').then(s => { if (s) this.config = s })
+  }
   private serial<T>(fn: () => Promise<T>): Promise<T> {
     const task = this.tail.then(fn)
     this.tail = task.catch(() => undefined)
@@ -44,7 +49,7 @@ export class Engine {
     if (lastUpdate && this.runtime.now() / 1000 - lastUpdate > 1500) await this.storage.setAlarm(this.runtime.now() + 1000)
     else await this.ensureAlarm()
   }
-  run(loc = 'CF'): Promise<void> {
+  run(loc?: string): Promise<void> {
     if (this.running) return this.running
     const task = this.serial(async () => {
       const started = this.runtime.now()
@@ -67,8 +72,8 @@ export class Engine {
           while (cursor < due.length) {
             const monitor = due[cursor++]
             try {
-              const result = await check(monitor, budget, loc)
-              const updated = transition(monitor, states.get(monitor.id)!, result, this.config)
+              const result = await check(monitor, budget)
+              const updated = transition(monitor, states.get(monitor.id)!, result)
               changes[stateKey(monitor.id)] = updated.state
               notices.push(...updated.notices)
             } catch (error) {
@@ -108,9 +113,9 @@ export class Engine {
     const now = Math.floor(this.runtime.now() / 1000)
     const items = await Promise.all(selected.map(async monitor => {
       const state = await this.state(monitor.id)
-      return { ...monitor, ...state, incidents: state.incidents.filter(i => i.end === null || i.end >= now - 7776000), latency: full ? state.latency.filter(p => p.time >= now - 43200) : undefined, ping: state.latency.at(-1)?.ping ?? null, location: state.latency.at(-1)?.loc ?? null }
+      return { ...monitor, ...state, incidents: state.incidents.filter(i => i.end === null || i.end >= now - 7776000), latency: full ? state.latency.filter(p => p.time >= now - 43200) : undefined, ping: state.latency.at(-1)?.ping ?? null }
     }))
-    return { title: this.config.title, links: this.config.links, maintenances: this.config.maintenances, updatedAt: (await this.storage.get<number>('lastUpdate')) ?? 0, nextAlarm: await this.storage.getAlarm(), up: items.filter(i => i.up === true).length, down: items.filter(i => i.up === false).length, monitors: items }
+    return { title: this.config.title, updatedAt: (await this.storage.get<number>('lastUpdate')) ?? 0, up: items.filter(i => i.up === true).length, down: items.filter(i => i.up === false).length, monitors: items }
   }
   async request(method: string, path: string, input: Record<string, unknown>, cookie: string, secure: boolean): Promise<{ data: unknown; cookie?: string }> {
     if (method === 'GET' && path === '/api/admin') {
@@ -141,6 +146,22 @@ export class Engine {
     })
     const admin = await this.storage.get<Credentials>('admin')
     if (!await authenticated(admin, cookie, this.runtime.now())) throw new HttpError('请先登录', 401)
+    if (path === '/api/settings') {
+      if (method === 'GET') return { data: this.config }
+      if (method === 'PUT') return this.serial(async () => {
+        const title = String(input.title ?? '').trim()
+        if (!title || title.length > 80) throw new HttpError('标题需要 1 到 80 个字符')
+        const timeZone = String(input.timeZone ?? '').trim()
+        if (!/^[a-zA-Z_]+\/[a-zA-Z_]+$/.test(timeZone)) throw new HttpError('时区格式无效（如 Asia/Shanghai）')
+        try { new Intl.DateTimeFormat('zh-CN', { timeZone }) } catch { throw new HttpError('时区格式无效（如 Asia/Shanghai）') }
+        const webhook = String(input.webhook ?? '').trim()
+        if (webhook) try { if (!['http:', 'https:'].includes(new URL(webhook).protocol)) throw Error() } catch { throw new HttpError('通知地址需要是有效的 HTTP 或 HTTPS URL') }
+        this.config = { title, timeZone, webhook }
+        await this.storage.put({ settings: this.config })
+        return { data: this.config }
+      })
+      throw new HttpError('不支持的方法', 405)
+    }
     if (path !== '/api/monitors') throw new HttpError('未找到接口', 404)
     if (method === 'GET') return { data: { monitors: await this.monitors() } }
     return this.serial(async () => {

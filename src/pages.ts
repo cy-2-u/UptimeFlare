@@ -1,4 +1,4 @@
-import type { Incident, Maintenance, Monitor } from './types'
+import type { Incident, Monitor } from './types'
 
 export const TIMEOUT_OPTIONS = [3, 5, 10, 15, 30, 60]
 export const INTERVAL_OPTIONS = [10, 20, 30, 60]
@@ -28,11 +28,10 @@ export function overallState(up: number, down: number, stale: boolean) {
 // shown in the topbar and footer. The nav is rendered from the validated
 // session — no client swap, no flash, no extra fetch. On the manage page
 // "站点管理" becomes "返回"; the login page renders no nav button at all.
-export function layout(opts: { title: string; site: string; isAdmin: boolean; manage?: boolean; login?: boolean; boot?: unknown; links?: { link: string; label: string }[] }, content: string) {
+export function layout(opts: { title: string; site: string; isAdmin: boolean; manage?: boolean; login?: boolean; boot?: unknown }, content: string) {
   const nav = opts.isAdmin
     ? `${opts.manage ? `<a href="/" class="btn ghost sm">← 返回</a>` : `<a href="/manage" class="btn ghost sm">站点管理</a>`}<button type="button" class="btn ghost sm danger-hover" data-action="logout">退出</button>`
     : opts.login ? '' : `<a href="/login" class="btn primary sm">登录</a>`
-  const links = (opts.links ?? []).map(link => `<a href="${esc(link.link)}" target="_blank" rel="noopener noreferrer">${esc(link.label)}</a>`).join('')
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -51,7 +50,7 @@ export function layout(opts: { title: string; site: string; isAdmin: boolean; ma
 <div class="orb orb-a" aria-hidden="true"></div>
 <div class="orb orb-b" aria-hidden="true"></div>
 <main>${content}</main>
-<footer class="footer"><p>© ${new Date().getFullYear()} ${esc(opts.site)} · 持续监测</p><div class="footer-links">${links}</div></footer>
+<footer class="footer"><p>© ${new Date().getFullYear()} ${esc(opts.site)} · 持续监测</p></footer>
 </div>
 ${opts.boot === undefined ? '' : bootScript(opts.boot)}
 <script type="module" src="/app.js"></script>
@@ -71,7 +70,6 @@ export type StatusBoot = {
   startedAt: Record<string, number>
   checkedAt: Record<string, number>
   lastPing: Record<string, number>
-  maintenances: Maintenance[]
 }
 
 export function statusPage(boot: StatusBoot) {
@@ -114,8 +112,6 @@ export function statusPage(boot: StatusBoot) {
 </div>
 </section>
 <div class="groups">${cards}</div>
-<div class="maint-alerts" data-maint-active></div>
-<div data-maint-upcoming></div>
 <dialog class="dlg" id="day-dialog">
 <div class="dlg-head"><div><div class="dlg-sub" data-day-sub></div><div class="dlg-title" data-day-title>当日故障</div></div><button type="button" class="dlg-close" aria-label="关闭">✕</button></div>
 <div class="dlg-body" data-day-body></div>
@@ -126,7 +122,7 @@ export function statusPage(boot: StatusBoot) {
 </dialog>`
 }
 
-export type DetailBoot = { monitor: Monitor; up: boolean | null; incident: Incident[]; latency: { time: number; ping: number; loc: string }[]; startedAt?: number; checkedAt: number; maintenances: Maintenance[] }
+export type DetailBoot = { monitor: Monitor; up: boolean | null; incident: Incident[]; latency: { time: number; ping: number }[]; startedAt?: number; checkedAt: number }
 
 export function detailPage(boot: DetailBoot | null, id: string) {
   if (!boot) return `<div class="detail-wrap"><a href="/" class="back">← 返回状态页</a><p class="empty-state">未找到监测项：${esc(id)}</p></div>`
@@ -137,7 +133,7 @@ export function detailPage(boot: DetailBoot | null, id: string) {
   return `<div class="detail-wrap"><a href="/" class="back">← 返回状态页</a>
 <article class="detail-card">
 <div class="detail-head">
-<div class="detail-title"><span class="emblem-sm${isUp ? '' : ' bad'}" data-detail-icon>${isUp ? '✔' : '✖'}</span><div><div class="detail-name">${esc(boot.monitor.name)}${boot.monitor.statusPageLink ? `<a href="${esc(boot.monitor.statusPageLink)}" target="_blank" rel="noopener noreferrer" class="ext" aria-label="访问站点">↗</a>` : ''}</div><p class="muted">${esc(host)}</p>${boot.monitor.tooltip ? `<p class="muted">${esc(boot.monitor.tooltip)}</p>` : ''}</div></div>
+<div class="detail-title"><span class="emblem-sm${isUp ? '' : ' bad'}" data-detail-icon>${isUp ? '✔' : '✖'}</span><div><div class="detail-name">${esc(boot.monitor.name)}${boot.monitor.statusPageLink ? `<a href="${esc(boot.monitor.statusPageLink)}" target="_blank" rel="noopener noreferrer" class="ext" aria-label="访问站点">↗</a>` : ''}</div><p class="muted">${esc(host)}</p></div></div>
 <div class="detail-badges"><span class="badge" data-detail-status>${isUp ? '运行正常' : '宕机'}</span><span class="badge" data-detail-uptime>总可用率 —</span><span class="badge" data-detail-ago>— 前检查</span></div>
 </div>
 <section><h3 class="sec-title">可用率历史（90 天）</h3><div class="bars wide" data-bars></div></section>
@@ -145,7 +141,7 @@ export function detailPage(boot: DetailBoot | null, id: string) {
 </article></div>`
 }
 
-export function managePage(monitors: Monitor[]) {
+export function managePage(monitors: Monitor[], settings: { title: string; timeZone: string; webhook: string }) {
   const rows = monitors.length === 0
     ? `<p class="empty-state">当前还没有网站。</p>`
     : monitors.map(monitor => `<div class="monitor-row" data-row="${esc(monitor.id)}"><div class="min-w-0"><div class="row-title"><strong>${esc(monitor.name)}</strong><span class="badge">${esc(monitor.group)}</span><span class="badge">${monitor.intervalMinutes} 分钟</span></div><div class="row-target">${esc(monitor.target)}</div></div><div class="row-actions"><button type="button" class="btn ghost sm" data-edit="${esc(monitor.id)}">编辑</button><button type="button" class="btn danger sm" data-remove="${esc(monitor.id)}">删除</button></div></div>`).join('')
@@ -177,6 +173,18 @@ export function managePage(monitors: Monitor[]) {
 <div class="monitor-list" data-list>${rows}</div>
 </div>
 </div>
+</section>
+<section class="manage-card">
+<h2 class="form-title">站点设置</h2>
+<form class="form" id="settings-form">
+<div class="field-row">
+<label class="field"><span>状态页标题</span><input name="title" value="${esc(settings.title)}" maxlength="80"></label>
+<label class="field"><span>通知时区</span><input name="timeZone" value="${esc(settings.timeZone)}" placeholder="Asia/Shanghai"></label>
+</div>
+<label class="field"><span>通知地址</span><input name="webhook" value="${esc(settings.webhook)}" placeholder="https://…（留空则不通知）"></label>
+<button type="submit" class="btn primary" data-settings-submit>保存设置</button>
+<p class="form-message" data-settings-message></p>
+</form>
 </section></div>`
 }
 

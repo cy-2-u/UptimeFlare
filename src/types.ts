@@ -7,10 +7,9 @@ export type Monitor = {
   intervalMinutes: number
   preview?: string
   statusPageLink?: string
-  tooltip?: string
 }
 export type Incident = { start: number[]; end: number | null; error: string[] }
-export type Point = { time: number; ping: number; loc: string }
+export type Point = { time: number; ping: number }
 export type State = {
   startedAt: number
   checkedAt: number
@@ -22,20 +21,7 @@ export type State = {
 }
 export type Notice = { monitor: Monitor; up: boolean; first: boolean; start: number; time: number; reason: string }
 export type Credentials = { username: string; salt: string; passwordHash: string; sessionKey: string; algorithm?: 'pbkdf2' }
-export type Maintenance = {
-  monitors?: string[]
-  title?: string
-  body: string
-  start: number | string
-  end?: number | string
-  color?: string
-}
-export type Settings = {
-  title: string
-  links: { link: string; label: string }[]
-  maintenances: Maintenance[]
-  notification: { timeZone: string; gracePeriod: number; skipNotificationIds: string[]; skipErrorChangeNotification: boolean }
-}
+export type Settings = { title: string; timeZone: string; webhook: string }
 export interface Storage {
   get<T>(key: string): Promise<T | undefined>
   put(entries: Record<string, unknown>): Promise<void>

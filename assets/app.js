@@ -325,11 +325,7 @@ function initStatusPage(bootstrap) {
     })
   }
 
-  function inMaintenance(monitorId, nowMs) {
-    return bootstrap.maintenances.some(m => nowMs >= new Date(m.start).getTime() && (!m.end || nowMs <= new Date(m.end).getTime()) && (m.monitors || []).indexOf(monitorId) !== -1)
-  }
-
-  // Cards: bars, percent, maintenance-override status, latency, ago.
+  // Cards: bars, percent, latency, ago.
   bootstrap.monitors.forEach(monitor => {
     const card = $('[data-monitor="' + monitor.id + '"]')
     if (!card) return
@@ -341,35 +337,6 @@ function initStatusPage(bootstrap) {
       percent.textContent = value
       if (value !== '—') percent.innerHTML += '<span style="color:#94a3b8">%</span>'
     }
-    if (inMaintenance(monitor.id, Date.now())) {
-      const dot = $('[data-dot]', card)
-      if (dot) dot.className = 'dot dot-maintenance'
-      const statusLabel = $('[data-status-label]', card)
-      if (statusLabel) statusLabel.textContent = '维护中'
-    }
-  })
-
-  // Maintenance alerts: active (time-based) and upcoming previews.
-  const alertBox = $('[data-maint-active]')
-  const upcomingBox = $('[data-maint-upcoming]')
-  const nowMs = Date.now()
-  bootstrap.maintenances.forEach(m => {
-    const startMs = new Date(m.start).getTime()
-    const endOk = !m.end || nowMs <= new Date(m.end).getTime()
-    const active = nowMs >= startMs && endOk
-    const upcoming = nowMs < startMs
-    if (!active && !upcoming) return
-    const box = active ? alertBox : upcomingBox
-    if (!box) return
-    const div = document.createElement('div')
-    div.className = 'maint' + (active ? '' : ' upcoming') + ' ' + (m.color || 'amber')
-    div.innerHTML =
-      '<span class="maint-title"></span>' +
-      '<span class="maint-time">' + (active ? '' : '开始于 ') + fmtTime(Math.round(startMs / 1000)) + (m.end ? ' → ' + fmtTime(Math.round(new Date(m.end).getTime() / 1000)) : '') + '</span>' +
-      '<span class="maint-body"></span>'
-    $('.maint-title', div).textContent = m.title || (active ? '计划维护' : '维护预告')
-    $('.maint-body', div).textContent = m.body
-    box.appendChild(div)
   })
 
   paintOverall()
@@ -401,10 +368,8 @@ function initStatusPage(bootstrap) {
           const card = $('[data-monitor="' + id + '"]')
           const summary = data.monitors[id]
           if (!card || !summary) return
-          // Keep each card's dot/label in step with the banner (maintenance
-          // overrides stay untouched — a maintenance window is not an outage).
           const dot = $('[data-dot]', card)
-          if (dot && !dot.classList.contains('dot-maintenance')) {
+          if (dot) {
             const status = summary.up == null ? 'pending' : summary.up ? 'up' : 'down'
             if (!dot.classList.contains('dot-' + status)) {
               dot.className = 'dot dot-' + status
@@ -436,20 +401,6 @@ function initDetailPage(bootstrap) {
   const incidents = bootstrap.incident
   const latencies = bootstrap.latency
   const nowSec = Math.floor(Date.now() / 1000)
-
-  const inMaintenance = bootstrap.maintenances.some(m => {
-    const t = Date.now()
-    return t >= new Date(m.start).getTime() && (!m.end || t <= new Date(m.end).getTime()) && (m.monitors || []).indexOf(monitor.id) !== -1
-  })
-  if (inMaintenance) {
-    const statusBadge = $('[data-detail-status]')
-    if (statusBadge) statusBadge.textContent = '维护中'
-    const icon = $('[data-detail-icon]')
-    if (icon) {
-      icon.textContent = '⚠'
-      icon.classList.add('warn')
-    }
-  }
 
   const totals = renderBars($('[data-bars]'), incidents, bootstrap.startedAt, nowSec, 90, monitor.name)
   const uptime = $('[data-detail-uptime]')
@@ -516,7 +467,7 @@ function initDetailPage(bootstrap) {
       hoverDot.setAttribute('cy', cy)
       tip.hidden = false
       tip.textContent = ''
-      tip.appendChild(document.createTextNode(point.ping + 'ms · ' + point.loc + ' '))
+      tip.appendChild(document.createTextNode(point.ping + 'ms '))
       const time = document.createElement('span')
       time.style.cssText = 'opacity:0.7;font-weight:400'
       time.textContent = fmtTimeShort(point.time)
@@ -778,6 +729,34 @@ function initManagePage(bootstrap) {
       }
     })
   })
+
+  // Site settings: title, notification timezone, webhook — live in the DO.
+  const settingsForm = $('#settings-form')
+  if (settingsForm) {
+    const settingsMessage = $('[data-settings-message]', settingsForm)
+    settingsForm.addEventListener('submit', async event => {
+      event.preventDefault()
+      settingsMessage.textContent = ''
+      settingsMessage.classList.remove('show')
+      try {
+        const res = await fetch('/api/settings', {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            title: settingsForm.elements.title.value,
+            timeZone: settingsForm.elements.timeZone.value,
+            webhook: settingsForm.elements.webhook.value,
+          }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || '保存失败')
+        location.reload()
+      } catch (error) {
+        settingsMessage.textContent = error.message
+        settingsMessage.classList.add('show')
+      }
+    })
+  }
 }
 
 // ---- login page -----------------------------------------------------------
