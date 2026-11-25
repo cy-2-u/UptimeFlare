@@ -7,8 +7,19 @@ export class Kernel implements Storage {
   failWrite = false
   alarm: number | null = null
   private depth = 0
+  // Holds one key's reads until released: turns the async settings load into a
+  // controllable race for constructor-serialization tests.
+  holdKey?: string
+  holdGate?: Promise<void>
   constructor() { this.db.exec('CREATE TABLE kv (key TEXT PRIMARY KEY, value TEXT NOT NULL)') }
+  hold(key: string) {
+    let release!: () => void
+    this.holdKey = key
+    this.holdGate = new Promise(resolve => { release = resolve })
+    return release
+  }
   async get<T>(key: string): Promise<T | undefined> {
+    if (this.holdKey === key && this.holdGate) await this.holdGate
     const row = this.db.prepare('SELECT value FROM kv WHERE key=?').get(key) as { value: string } | undefined
     return row ? JSON.parse(row.value) : undefined
   }

@@ -15,7 +15,8 @@ crons = ["0 * * * *"]
 name = "MONITOR_SCHEDULER_DO"
 class_name = "MonitorScheduler"
 
-# Keep the applied ledger and object identity: the stored monitor list is imported in place.
+# Applied migration ledger: v1/v2/v3 already exist on the live object and must
+# stay in order. v3 removed the pre-merge RemoteChecker class.
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["RemoteChecker"]

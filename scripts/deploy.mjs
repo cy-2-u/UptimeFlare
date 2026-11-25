@@ -16,11 +16,7 @@ async function api(endpoint, init = {}) {
 const account = process.env.CLOUDFLARE_ACCOUNT_ID || (await api('/accounts'))[0]?.id
 if (!account) throw Error('Set CLOUDFLARE_ACCOUNT_ID')
 const generated = path.join(root, 'wrangler.deploy.toml')
-let config = await readFile(path.join(root, 'wrangler.toml'), 'utf8')
-// Existing installations retain D1 as a read-only import source. New installs need no D1.
-const databases = await api(`/accounts/${account}/d1/database?per_page=1000`)
-const legacy = databases.find(db => db.name === 'uptimeflare_d1')
-if (legacy) config += `\n[[d1_databases]]\nbinding = "UPTIMEFLARE_D1"\ndatabase_name = "uptimeflare_d1"\ndatabase_id = "${legacy.uuid}"\n`
+const config = await readFile(path.join(root, 'wrangler.toml'), 'utf8')
 try {
   await writeFile(generated, config, 'utf8')
   const command = process.platform === 'win32' ? 'npx.cmd' : 'npx'

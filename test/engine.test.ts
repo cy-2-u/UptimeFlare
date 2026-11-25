@@ -27,22 +27,22 @@ test('complete user journey: setup, add, check, failure, change, recovery, edit,
   await engine.request('POST', '/api/monitors', monitor, cookie, true)
   // A new monitor must not wait for the anchored tick: the alarm is pulled in.
   assert.ok((await storage.getAlarm())! <= network.now() + 2000)
-  await engine.run('TEST')
+  await engine.run()
   assert.equal((await state())!.up, true)
   assert.equal(network.notices.length, 0)
   network.advance()
   network.statuses = [503, 503]
-  await engine.run('TEST')
+  await engine.run()
   assert.equal((await state())!.incidents[0].end, null)
   assert.equal(network.notices.length, 1)
   network.advance()
   network.statuses = [502, 502]
-  await engine.run('TEST')
+  await engine.run()
   // The changed error is recorded in the incident history but does not re-notify.
   assert.deepEqual((await state())!.incidents[0].error, ['HTTP 503', 'HTTP 502'])
   assert.equal(network.notices.length, 1)
   network.advance()
-  await engine.run('TEST')
+  await engine.run()
   assert.ok((await state())!.incidents[0].end)
   assert.equal(network.notices.length, 2)
   await engine.request('PUT', '/api/monitors', { id: monitor.id, name: '改名', intervalMinutes: 20 }, cookie, true)
@@ -196,9 +196,35 @@ test('settings persist across restart and drive the notification webhook', async
   // A restart loads settings from storage — the title survives.
   const restarted = new Engine(storage, network, settings)
   assert.equal((await restarted.snapshot()).title, '新标题')
-  // Validation: bad timezone and webhook are rejected, blank webhook clears notifications.
+  // Validation: bad timezone and webhook are rejected; UTC is a valid name
+  // even though it has no "/" separator; blank webhook clears notifications.
   await assert.rejects(engine.request('PUT', '/api/settings', { title: 'x', timeZone: 'Mars/Olympus', webhook: '' }, cookie, true), /时区/)
   await assert.rejects(engine.request('PUT', '/api/settings', { title: 'x', timeZone: 'Asia/Shanghai', webhook: 'ftp://x' }, cookie, true), /通知地址/)
+  const utc = await engine.request('PUT', '/api/settings', { title: 'x', timeZone: 'UTC', webhook: '' }, cookie, true)
+  assert.equal((utc.data as { timeZone: string }).timeZone, 'UTC')
+  // A blank webhook promises "no notifications" — no request may leave at all.
+  network.webhook = 'no-such-host.invalid'
+  network.statuses = [503, 503]
+  network.advance(600)
+  const hookRequests = () => network.requests.filter(url => url.includes('/abc/')).length
+  const before = hookRequests()
+  await engine.run()
+  assert.equal(hookRequests() - before, 0)
+  // An alarm firing immediately after construction must not race the async
+  // settings load: hold the settings read, queue one notice with NO monitors
+  // (so the only outbound candidate is that notice), start run(), and prove
+  // nothing leaves — not even to the factory webhook — once settings (blank
+  // webhook) win. A constructor that skipped the serialized load would send
+  // the queued notice via the factory webhook and fail this zero-request bar.
+  await storage.put({ monitors: [], notices: [{ monitor, up: false, first: true, start: network.now() / 1000, time: network.now() / 1000, reason: 'held' }] })
+  const releaseSettings = storage.hold('settings')
+  const raced = new Engine(storage, network, settings)
+  const racedBefore = network.requests.length
+  const round = raced.run()
+  await new Promise(resolve => setTimeout(resolve, 0)) // let run() queue behind the held load
+  releaseSettings()
+  await round
+  assert.equal(network.requests.length - racedBefore, 0)
 })
 
 test('supervisor re-arms missing alarms and health reports stale data honestly', async t => {

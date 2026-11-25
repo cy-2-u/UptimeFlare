@@ -72,7 +72,10 @@ async function page(request: Request, env: Env, ctx: ExecutionContext, path: str
     const admin = await adminInfo()
     if (admin?.isAuthenticated === true) return redirect('/manage')
     const hasAdmin = admin?.hasAdmin === true
-    const siteTitle = hasAdmin ? (JSON.parse((await backend.request('GET', '/api/settings', {}, '', secure)).body) as { title: string }).title : settings.title
+    // /api/settings requires a session — the /login visitor by definition has
+    // none. The snapshot returns the live title without any auth.
+    let siteTitle = settings.title
+    try { siteTitle = (await backend.snapshot()).data!.title } catch { /* fresh DO without monitors: factory title stands */ }
     return html(layout({ title: hasAdmin ? '管理员登录' : '设置管理员', site: siteTitle, isAdmin: false, login: true }, loginPage(hasAdmin)), 'private, no-store')
   }
 
